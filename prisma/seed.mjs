@@ -16,7 +16,7 @@ try {
       currency: "AOA",
       capacity: 30,
       ticketIncludesEntry: false,
-      status: "ON_SALE",
+      status: "DRAFT",
     },
     create: {
       slug: "brunch-mangais",
@@ -28,40 +28,68 @@ try {
       currency: "AOA",
       capacity: 30,
       ticketIncludesEntry: false,
-      status: "ON_SALE",
+      status: "DRAFT",
     },
   });
 
-  let route = await prisma.route.findFirst({ where: { eventId: event.id, name: "Luanda · Talatona · Benfica" } });
+  let route = await prisma.route.findFirst({
+    where: { eventId: event.id, name: "Luanda · Talatona · Benfica" },
+  });
   if (!route) {
     route = await prisma.route.create({
-      data: { eventId: event.id, name: "Luanda · Talatona · Benfica", capacity: 30 },
+      data: {
+        eventId: event.id,
+        name: "Luanda · Talatona · Benfica",
+        capacity: 30,
+      },
     });
   } else {
-    route = await prisma.route.update({ where: { id: route.id }, data: { capacity: 30, active: true } });
+    route = await prisma.route.update({
+      where: { id: route.id },
+      data: { capacity: 30, active: true },
+    });
   }
 
   const points = [
-    { name: "Cidade de Luanda", address: "Marginal — ponto exacto por SMS", at: "2026-11-01T13:30:00.000Z", sortOrder: 1 },
-    { name: "Talatona", address: "Belas Shopping — entrada principal", at: "2026-11-01T14:10:00.000Z", sortOrder: 2 },
-    { name: "Benfica", address: "Via Expressa — ponto FestGO", at: "2026-11-01T14:40:00.000Z", sortOrder: 3 },
+    {
+      name: "Cidade de Luanda",
+      address: "Marginal — ponto exacto por SMS",
+      at: "2026-11-01T06:30:00.000Z",
+      sortOrder: 1,
+    },
+    {
+      name: "Talatona",
+      address: "Belas Shopping — entrada principal",
+      at: "2026-11-01T07:10:00.000Z",
+      sortOrder: 2,
+    },
+    {
+      name: "Benfica",
+      address: "Via Expressa — ponto FestGO",
+      at: "2026-11-01T07:40:00.000Z",
+      sortOrder: 3,
+    },
   ];
 
   for (const point of points) {
     await prisma.pickupPoint.upsert({
       where: { routeId_name: { routeId: route.id, name: point.name } },
-      update: { address: point.address, departureAt: new Date(point.at), sortOrder: point.sortOrder },
-      create: { routeId: route.id, name: point.name, address: point.address, departureAt: new Date(point.at), sortOrder: point.sortOrder },
+      update: {
+        address: point.address,
+        departureAt: new Date(point.at),
+        sortOrder: point.sortOrder,
+      },
+      create: {
+        routeId: route.id,
+        name: point.name,
+        address: point.address,
+        departureAt: new Date(point.at),
+        sortOrder: point.sortOrder,
+      },
     });
   }
 
-  await prisma.discount.upsert({
-    where: { code: "FESTGO5" },
-    update: { eventId: event.id, type: "PERCENT", value: 5, active: true },
-    create: { eventId: event.id, code: "FESTGO5", type: "PERCENT", value: 5, active: true },
-  });
-
-  console.log("FestGO Brunch Mangais seed concluído.");
+  console.log("FestGO Brunch Mangais preparado com as vendas fechadas.");
 } finally {
   await prisma.$disconnect();
 }
