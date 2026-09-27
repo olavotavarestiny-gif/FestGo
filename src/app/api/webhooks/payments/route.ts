@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { reconcilePayment } from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 
 export const runtime = "nodejs";
 
@@ -121,6 +122,7 @@ export async function POST(request: Request) {
       where: { id: event.id },
       data: { processedAt: new Date() },
     });
+    if (result.status === "SUCCEEDED") schedulePostPaymentJobs(request);
     return NextResponse.json({ received: true, status: result.status });
   } catch {
     // A resposta não é confirmada para que o fornecedor possa repetir a entrega.

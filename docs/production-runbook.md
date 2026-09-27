@@ -8,7 +8,7 @@
 4. Executar `npm run db:seed`; o evento permanecerá em `DRAFT`.
 5. Criar pelo menos um administrador e dois operadores com `npm run user:create`.
 6. Configurar o webhook do fornecedor para `https://festgo.mazanga.digital/api/webhooks/payments` e, quando suportado, enviar `X-Webhook-Secret` ou `X-Signature`.
-7. Confirmar os Cron Jobs da Vercel e a presença de `CRON_SECRET`.
+7. Confirmar os Cron Jobs da Vercel e a presença de `CRON_SECRET`. O plano Hobby aceita apenas execução diária; para produção, usar Vercel Pro ou um scheduler externo com frequência de 10 minutos.
 
 ## Backups
 

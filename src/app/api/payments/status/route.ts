@@ -4,6 +4,7 @@ import { reconcilePayment } from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
 import { verifyReservationToken } from "@/lib/reservation-access";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -45,7 +46,9 @@ export async function POST(request: Request) {
         { error: "Ainda não existe pagamento consultável." },
         { status: 404 },
       );
-    return NextResponse.json(await reconcilePayment(payment.id));
+    const result = await reconcilePayment(payment.id);
+    if (result.status === "SUCCEEDED") schedulePostPaymentJobs(request);
+    return NextResponse.json(result);
   } catch (error) {
     if (
       typeof error === "object" &&
