@@ -1,0 +1,55 @@
+import { notFound } from "next/navigation";
+import QRCode from "qrcode";
+import { prisma } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
+
+export default async function TicketPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  if (!/^[0-9a-f-]{36}$/i.test(token)) notFound();
+  const ticket = await prisma.ticket.findUnique({
+    where: { publicToken: token },
+    include: {
+      passenger: { include: { reservation: { include: { event: true, pickupPoint: true } } } },
+      validations: true,
+    },
+  });
+  if (!ticket) notFound();
+
+  const appUrl = (process.env.APP_URL ?? "https://festgo.mazanga.digital").replace(/\/$/, "");
+  const qr = await QRCode.toDataURL(`${appUrl}/api/tickets/${ticket.publicToken}/validate`, {
+    width: 420,
+    margin: 2,
+    color: { dark: "#13061f", light: "#ffffff" },
+  });
+  const reservation = ticket.passenger.reservation;
+  const usedOutbound = ticket.validations.some((item) => item.leg === "OUTBOUND");
+  const usedReturn = ticket.validations.some((item) => item.leg === "RETURN");
+
+  return (
+    <main className="min-h-screen bg-white px-5 py-10 text-zinc-950">
+      <article className="mx-auto max-w-md overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-xl shadow-purple-950/10">
+        <header className="bg-zinc-950 px-7 py-6 text-white">
+          <p className="text-xs font-bold uppercase tracking-[0.24em] text-purple-300">Bilhete digital FestGO</p>
+          <h1 className="mt-2 text-2xl font-black">Brunch Mangais</h1>
+        </header>
+        <div className="space-y-6 p-7">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Passageiro</p>
+            <p className="mt-1 text-xl font-bold">{ticket.passenger.fullName}</p>
+            <p className="mt-1 text-sm text-zinc-600">Reserva {reservation.reference}</p>
+          </div>
+          <img src={qr} alt="Código QR do bilhete" className="mx-auto aspect-square w-full max-w-72" />
+          <dl className="grid grid-cols-2 gap-4 border-t border-zinc-100 pt-5 text-sm">
+            <div><dt className="text-zinc-500">Data</dt><dd className="font-bold">1 de novembro</dd></div>
+            <div><dt className="text-zinc-500">Horário</dt><dd className="font-bold">10h—20h</dd></div>
+            <div className="col-span-2"><dt className="text-zinc-500">Ponto de recolha</dt><dd className="font-bold">{reservation.pickupPoint.name}</dd></div>
+          </dl>
+          <div className={`rounded-2xl px-4 py-3 text-center text-sm font-bold ${ticket.status === "VALID" ? "bg-purple-50 text-purple-800" : "bg-red-50 text-red-700"}`}>
+            {ticket.status === "VALID" ? `Válido · Ida ${usedOutbound ? "usada" : "disponível"} · Volta ${usedReturn ? "usada" : "disponível"}` : "Bilhete inválido ou revogado"}
+          </div>
+        </div>
+      </article>
+    </main>
+  );
+}
