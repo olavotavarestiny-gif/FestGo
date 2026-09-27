@@ -2,19 +2,64 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { reconcilePayment } from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
+import { verifyReservationToken } from "@/lib/reservation-access";
+import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
-const schema = z.object({ reservationId: z.string().min(8).max(40) });
+const schema = z.object({
+  reservationId: z.string().min(8).max(40),
+  accessToken: z.string().min(32).max(100),
+});
 
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
+  if (
+    !verifyReservationToken(parsed.data.reservationId, parsed.data.accessToken)
+  )
+    return NextResponse.json(
+      { error: "Reserva não autorizada." },
+      { status: 403 },
+    );
   try {
-    const reservation = await prisma.reservation.findUnique({ where: { id: parsed.data.reservationId }, include: { payments: { where: { provider: "paygo" }, orderBy: { createdAt: "desc" }, take: 1 } } });
+    await enforceRateLimit({
+      namespace: "payment-status",
+      identifier: clientIp(request),
+      limit: 30,
+      windowMs: 10 * 60_000,
+    });
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: parsed.data.reservationId },
+      include: {
+        payments: {
+          where: { provider: "paygo" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
     const payment = reservation?.payments[0];
-    if (!payment?.providerPaymentId) return NextResponse.json({ error: "Ainda não existe pagamento consultável." }, { status: 404 });
+    if (!payment?.providerPaymentId)
+      return NextResponse.json(
+        { error: "Ainda não existe pagamento consultável." },
+        { status: 404 },
+      );
     return NextResponse.json(await reconcilePayment(payment.id));
-  } catch {
-    return NextResponse.json({ error: "Não foi possível consultar o estado do pagamento." }, { status: 503 });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error &&
+      "status" in error &&
+      error.status === 429
+    )
+      return NextResponse.json(
+        { error: "Demasiadas consultas. Aguarda alguns minutos." },
+        { status: 429 },
+      );
+    return NextResponse.json(
+      { error: "Não foi possível consultar o estado do pagamento." },
+      { status: 503 },
+    );
   }
 }

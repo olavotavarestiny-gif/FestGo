@@ -12,7 +12,10 @@ type KukuGestStatusResponse = {
 };
 
 export class KukuGestError extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
     super(message);
     this.name = "KukuGestError";
   }
@@ -21,9 +24,11 @@ export class KukuGestError extends Error {
 function config() {
   const apiKey = process.env.KUKUGEST_API_KEY;
   const rawUrl = process.env.KUKUGEST_API_URL;
-  if (!apiKey || !rawUrl) throw new KukuGestError("Falta configurar a integração KukuGest.");
+  if (!apiKey || !rawUrl)
+    throw new KukuGestError("Falta configurar a integração KukuGest.");
   const url = new URL(rawUrl);
-  if (url.protocol !== "https:") throw new KukuGestError("KUKUGEST_API_URL deve utilizar HTTPS.");
+  if (url.protocol !== "https:")
+    throw new KukuGestError("KUKUGEST_API_URL deve utilizar HTTPS.");
   return { apiKey, baseUrl: rawUrl.replace(/\/$/, "") };
 }
 
@@ -37,9 +42,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(5_000),
   });
-  const data = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new KukuGestError(data.error ?? "O KukuGest rejeitou o pedido.", response.status);
+  const data = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+  };
+  if (!response.ok)
+    throw new KukuGestError(
+      data.error ?? "O KukuGest rejeitou o pedido.",
+      response.status,
+    );
   return data;
 }
 
@@ -83,6 +95,7 @@ export async function registerKukuGestSale(input: {
       },
     }),
   });
-  if (!result.success || !result.saleId) throw new KukuGestError("O KukuGest devolveu uma resposta inválida.");
+  if (!result.success || !result.saleId)
+    throw new KukuGestError("O KukuGest devolveu uma resposta inválida.");
   return result;
 }

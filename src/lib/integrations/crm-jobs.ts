@@ -1,17 +1,31 @@
 import { prisma } from "@/lib/db";
 import { registerKukuGestSale } from "@/lib/integrations/kukugest";
 
-export async function processCRMJobs(options: { reservationId?: string; limit?: number } = {}) {
+export async function processCRMJobs(
+  options: { reservationId?: string; limit?: number } = {},
+) {
   const jobs = await prisma.cRMIntegrationJob.findMany({
     where: {
-      ...(options.reservationId ? { reservationId: options.reservationId } : {}),
+      ...(options.reservationId
+        ? { reservationId: options.reservationId }
+        : {}),
       attempts: { lt: 5 },
       OR: [
-        { status: { in: ["PENDING", "FAILED"] }, nextAttemptAt: { lte: new Date() } },
-        { status: "PROCESSING", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+        {
+          status: { in: ["PENDING", "FAILED"] },
+          nextAttemptAt: { lte: new Date() },
+        },
+        {
+          status: "PROCESSING",
+          updatedAt: { lt: new Date(Date.now() - 10 * 60_000) },
+        },
       ],
     },
-    include: { reservation: { include: { customer: true, event: true, pickupPoint: true } } },
+    include: {
+      reservation: {
+        include: { customer: true, event: true, pickupPoint: true },
+      },
+    },
     orderBy: { createdAt: "asc" },
     take: Math.min(Math.max(options.limit ?? 20, 1), 20),
   });
@@ -23,7 +37,10 @@ export async function processCRMJobs(options: { reservationId?: string; limit?: 
         id: job.id,
         OR: [
           { status: { in: ["PENDING", "FAILED"] } },
-          { status: "PROCESSING", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+          {
+            status: "PROCESSING",
+            updatedAt: { lt: new Date(Date.now() - 10 * 60_000) },
+          },
         ],
       },
       data: { status: "PROCESSING" },
@@ -48,23 +65,38 @@ export async function processCRMJobs(options: { reservationId?: string; limit?: 
       });
       await prisma.$transaction([
         prisma.cRMIntegrationJob.update({
-          where: { id: job.id }, data: { status: "SUCCEEDED", attempts: { increment: 1 }, lastError: null },
+          where: { id: job.id },
+          data: {
+            status: "SUCCEEDED",
+            attempts: { increment: 1 },
+            lastError: null,
+          },
         }),
-        ...(result.contactId ? [prisma.customer.update({
-          where: { id: reservation.customerId }, data: { crmExternalId: String(result.contactId) },
-        })] : []),
+        ...(result.contactId
+          ? [
+              prisma.customer.update({
+                where: { id: reservation.customerId },
+                data: { crmExternalId: String(result.contactId) },
+              }),
+            ]
+          : []),
       ]);
       succeeded += 1;
     } catch (error) {
       const attempts = job.attempts + 1;
-      const message = error instanceof Error ? error.message.slice(0, 500) : "Falha desconhecida.";
+      const message =
+        error instanceof Error
+          ? error.message.slice(0, 500)
+          : "Falha desconhecida.";
       await prisma.cRMIntegrationJob.update({
         where: { id: job.id },
         data: {
           status: attempts >= 5 ? "DEAD_LETTER" : "FAILED",
           attempts,
           lastError: message,
-          nextAttemptAt: new Date(Date.now() + Math.min(60, 2 ** attempts) * 60_000),
+          nextAttemptAt: new Date(
+            Date.now() + Math.min(60, 2 ** attempts) * 60_000,
+          ),
         },
       });
     }
