@@ -16,7 +16,6 @@ try {
       currency: "AOA",
       capacity: 30,
       ticketIncludesEntry: false,
-      status: "DRAFT",
     },
     create: {
       slug: "brunch-mangais",
@@ -46,7 +45,7 @@ try {
   } else {
     route = await prisma.route.update({
       where: { id: route.id },
-      data: { capacity: 30, active: true },
+      data: { capacity: 30 },
     });
   }
 
@@ -77,9 +76,6 @@ try {
     await prisma.pickupPoint.upsert({
       where: { routeId_name: { routeId: route.id, name: point.name } },
       update: {
-        address: point.address,
-        departureAt: null,
-        operationalConfirmed: false,
         sortOrder: point.sortOrder,
       },
       create: {
