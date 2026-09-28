@@ -51,7 +51,7 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 
 - `20260928140000_staff_session_version`: adiciona `User.sessionVersion` com valor inicial `1`; migração aditiva, sem apagar ou transformar inscrições.
 - Validada juntamente com todo o histórico de migrações numa PostgreSQL 16 temporária.
-- Produção verificada após publicação na Vercel: quatro migrações reconhecidas e nenhuma migração pendente.
+- Produção verificada após publicação na Vercel: cinco migrações reconhecidas e nenhuma migração pendente.
 - `20260928160000_sms_cost_tracking`: adiciona metadados de conteúdo, codificação, caracteres, segmentos, estado Ziett, falha e administrador à notificação. É aditiva e preserva as mensagens existentes.
 - `20260928190000_payment_invitations`: adiciona um convite individual por reserva, com nonce, expiração, confirmação, revogação e administrador criador. É aditiva e não cria pagamentos.
 
