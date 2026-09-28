@@ -31,7 +31,7 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 
 - `20260928140000_staff_session_version`: adiciona `User.sessionVersion` com valor inicial `1`; migração aditiva, sem apagar ou transformar inscrições.
 - Validada juntamente com todo o histórico de migrações numa PostgreSQL 16 temporária.
-- A aplicação em produção é feita automaticamente por `prisma migrate deploy` durante a publicação na Vercel.
+- Produção verificada após publicação na Vercel: três migrações reconhecidas e nenhuma migração pendente.
 
 ## Testes realizados
 
