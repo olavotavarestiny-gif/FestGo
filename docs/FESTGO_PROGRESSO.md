@@ -36,6 +36,9 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Histórico auditável das alterações feitas através do convite, sem atribuir essas alterações a um administrador.
 - Envio manual do link pela Ziett com texto final, referência real, aviso de custo UCS-2 e confirmação explícita de múltiplos segmentos.
 - Cobranças reais continuam desactivadas; o novo fluxo não chama a API de pagamentos do Supabase.
+- Área administrativa isolada `/admin/teste-gateway` preparada para o produto de teste de 100 Kz, sem associação a reservas, lugares ou bilhetes.
+- Pré-visualização directa do checkout e criação manual opcional através da API, sempre após confirmação explícita do administrador.
+- Limite de uma criação de teste por administrador a cada dez minutos e validação obrigatória do valor devolvido pelo gateway.
 
 ## Ficheiros modificados
 
@@ -69,6 +72,7 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Fase 3: 23 testes unitários aprovados sem base externa; 29/29 testes aprovados numa PostgreSQL 16 temporária com as cinco migrações.
 - Cobertos: assinatura e expiração de tokens, acesso inválido, criação idempotente, alteração de plano, passageiros, lugares e recolha, revogação, SMS com aviso de segmentos e ausência de cobranças.
 - `npm run build` aprovado com `/confirmar/[token]`, API pública do convite e API administrativa.
+- Teste do gateway: 14/14 testes relevantes aprovados com resposta externa simulada; confirmado que o produto é fixo, o acesso é administrativo e nenhuma linha `Payment` é criada.
 
 ## Problemas encontrados
 

@@ -36,6 +36,9 @@ export function AdminActions({
   }
   return (
     <div className="flex flex-wrap items-center gap-3">
+      <a href="/admin/teste-gateway" className="btn-secondary">
+        Testar gateway · 100 Kz
+      </a>
       <a href={exportHref} className="btn-secondary">
         Exportar passageiros
       </a>

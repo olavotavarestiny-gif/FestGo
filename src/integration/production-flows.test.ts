@@ -10,6 +10,7 @@ import { GET as exportPassengers } from "@/app/api/admin/passengers.csv/route";
 import { PATCH as updatePreReservation } from "@/app/api/admin/pre-reservations/[id]/route";
 import { POST as managePaymentInvitation } from "@/app/api/admin/payment-invitations/[reservationId]/route";
 import { POST as updatePaymentInvitation } from "@/app/api/payment-invitations/[token]/route";
+import { POST as createGatewayTestPayment } from "@/app/api/admin/payment-test/route";
 import {
   GET as inspectTicket,
   POST as validateTicket,
@@ -405,6 +406,70 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("SameSite=strict");
     const cookie = setCookie.split(";")[0];
+
+    const paymentsBeforeGatewayTest = await prisma.payment.count();
+    process.env.PAYMENTS_API_URL =
+      "https://rouxavcvorjiwhpjhsye.supabase.co/functions/v1/api-v1";
+    process.env.PAYMENTS_API_KEY = "test-gateway-key";
+    const gatewayRequest = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          payment_id: "20c995f3-fec2-40f9-bd96-7eeab4ec970f",
+          status: "pending",
+          payment_method: "multicaixa",
+          total_amount: 100,
+          currency: "AOA",
+          checkout_url: "https://gateway.example/checkout/test",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", gatewayRequest);
+    const gatewayTestBody = {
+      name: "Cliente de teste",
+      email: "gateway-test@example.test",
+      phone: "+244923111222",
+      method: "multicaixa",
+      confirmation: true,
+    };
+    const anonymousGatewayTest = await createGatewayTestPayment(
+      new Request("http://localhost/api/admin/payment-test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(gatewayTestBody),
+      }),
+    );
+    expect(anonymousGatewayTest.status).toBe(401);
+    const gatewayTest = await createGatewayTestPayment(
+      new Request("http://localhost/api/admin/payment-test", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify(gatewayTestBody),
+      }),
+    );
+    const gatewayResult = await gatewayTest.json();
+    expect({ status: gatewayTest.status, error: gatewayResult.error }).toEqual({
+      status: 200,
+      error: undefined,
+    });
+    expect(gatewayResult.amount).toBe(100);
+    expect(gatewayResult.paymentUrl).toBe("https://gateway.example/checkout/test");
+    expect(JSON.parse(gatewayRequest.mock.calls[0][1].body).items).toEqual([
+      { product_id: "20d032f3-e0c2-48d3-8ce1-c93bc682dd37", quantity: 1 },
+    ]);
+    expect(await prisma.payment.count()).toBe(paymentsBeforeGatewayTest);
+    const repeatedGatewayTest = await createGatewayTestPayment(
+      new Request("http://localhost/api/admin/payment-test", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify(gatewayTestBody),
+      }),
+    );
+    expect(repeatedGatewayTest.status).toBe(429);
+    expect(gatewayRequest).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+    delete process.env.PAYMENTS_API_KEY;
 
     const reservation = await prisma.reservation.findFirstOrThrow({
       where: { status: "PRE_RESERVED", plan: "DUO_INDIVIDUAL" },

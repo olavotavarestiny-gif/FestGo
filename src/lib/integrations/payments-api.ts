@@ -13,6 +13,11 @@ export type PaymentsApiCreateResult = {
   message?: string;
   thank_you_url?: string;
   status_check_url?: string;
+  payment_url?: string;
+  payment_link?: string;
+  checkout_url?: string;
+  redirect_url?: string;
+  url?: string;
   reference?: {
     entity?: string;
     reference_number?: string;
@@ -130,6 +135,24 @@ export async function createPayment(input: {
     );
   }
   return result;
+}
+
+export function paymentPageUrl(result: PaymentsApiCreateResult) {
+  const candidates = [
+    result.payment_url,
+    result.payment_link,
+    result.checkout_url,
+    result.redirect_url,
+    result.url,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    try {
+      const url = new URL(candidate);
+      if (url.protocol === "https:") return url.toString();
+    } catch {}
+  }
+  return null;
 }
 
 export async function getPayment(providerPaymentId: string) {
