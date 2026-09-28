@@ -85,20 +85,22 @@ enum JobStatus {
 }
 
 model User {
-  id                        String              @id @default(cuid())
-  email                     String              @unique
+  id                        String                 @id @default(cuid())
+  email                     String                 @unique
   name                      String
   passwordHash              String
-  sessionVersion            Int                 @default(1)
-  role                      UserRole            @default(OPERATOR)
-  active                    Boolean             @default(true)
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
+  sessionVersion            Int                    @default(1)
+  role                      UserRole               @default(OPERATOR)
+  active                    Boolean                @default(true)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
   auditLogs                 AuditLog[]
   ticketValidations         TicketValidation[]
   contactActivities         ContactActivity[]
-  notificationsRequested    Notification[]      @relation("NotificationRequestedBy")
-  paymentInvitationsCreated PaymentInvitation[] @relation("PaymentInvitationCreatedBy")
+  notificationsRequested    Notification[]         @relation("NotificationRequestedBy")
+  paymentInvitationsCreated PaymentInvitation[]    @relation("PaymentInvitationCreatedBy")
+  testReservationsCreated   TestReservation[]      @relation("TestReservationCreatedBy")
+  testTicketValidations     TestTicketValidation[]
 }
 
 model Customer {
@@ -288,6 +290,88 @@ model PaymentWebhookEvent {
   signatureValid  Boolean
   processedAt     DateTime?
   receivedAt      DateTime  @default(now())
+}
+
+model TestReservation {
+  id               String         @id @default(cuid())
+  reference        String         @unique
+  accessToken      String         @unique @default(uuid())
+  eventName        String         @default("FestGO — Brunch Mangais")
+  plan             CommercialPlan
+  passengerName    String
+  customerEmail    String
+  customerPhone    String
+  testSeat         String
+  pickupPreference String
+  status           String         @default("READY")
+  createdById      String
+  createdBy        User           @relation("TestReservationCreatedBy", fields: [createdById], references: [id])
+  payment          TestPayment?
+  ticket           TestTicket?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([createdById, createdAt])
+  @@index([status, createdAt])
+}
+
+model TestPayment {
+  id                String                    @id @default(cuid())
+  testReservationId String                    @unique
+  testReservation   TestReservation           @relation(fields: [testReservationId], references: [id], onDelete: Cascade)
+  provider          String                    @default("paygo")
+  providerPaymentId String?                   @unique
+  idempotencyKey    String                    @unique
+  productId         String
+  method            String
+  status            PaymentStatus             @default(CREATED)
+  amount            Decimal                   @db.Decimal(12, 2)
+  currency          String                    @default("AOA")
+  providerDetails   Json?
+  rawStatus         String?
+  reconciledAt      DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  webhookEvents     TestPaymentWebhookEvent[]
+
+  @@index([status, createdAt])
+}
+
+model TestPaymentWebhookEvent {
+  id              String      @id @default(cuid())
+  testPaymentId   String
+  testPayment     TestPayment @relation(fields: [testPaymentId], references: [id], onDelete: Cascade)
+  providerEventId String      @unique
+  payload         Json
+  signatureValid  Boolean
+  processedAt     DateTime?
+  receivedAt      DateTime    @default(now())
+
+  @@index([testPaymentId, receivedAt])
+}
+
+model TestTicket {
+  id                String                 @id @default(cuid())
+  testReservationId String                 @unique
+  testReservation   TestReservation        @relation(fields: [testReservationId], references: [id], onDelete: Cascade)
+  publicToken       String                 @unique @default(uuid())
+  status            String                 @default("VALID")
+  issuedAt          DateTime               @default(now())
+  validations       TestTicketValidation[]
+}
+
+model TestTicketValidation {
+  id          String     @id @default(cuid())
+  ticketId    String
+  ticket      TestTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  leg         TicketLeg
+  validatedAt DateTime   @default(now())
+  operatorId  String
+  operator    User       @relation(fields: [operatorId], references: [id])
+  deviceId    String?
+
+  @@unique([ticketId, leg])
+  @@index([validatedAt])
 }
 
 model Ticket {

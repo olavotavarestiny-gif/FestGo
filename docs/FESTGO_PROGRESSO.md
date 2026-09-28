@@ -1,7 +1,7 @@
 # FestGO — Progresso
 
 Última actualização: 28 de Setembro de 2026  
-Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
+Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 
 ## Funcionalidades concluídas
 
@@ -39,6 +39,14 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Área administrativa isolada `/admin/teste-gateway` preparada para o produto de teste de 100 Kz, sem associação a reservas, lugares ou bilhetes.
 - Pré-visualização directa do checkout e criação manual opcional através da API, sempre após confirmação explícita do administrador.
 - Limite de uma criação de teste por administrador a cada dez minutos e validação obrigatória do valor devolvido pelo gateway.
+- Fluxo integrado de 100 Kz disponível apenas para administradores, com reserva, pagamento, webhook, bilhete e validações guardados em tabelas de teste independentes.
+- Produto de teste fixo no servidor (`20d032f3-e0c2-48d3-8ce1-c93bc682dd37`), valor fixo de 100 AOA e confirmação manual obrigatória antes de contactar o gateway.
+- Link personalizado administrativo com evento, plano, passageiro, lugar fictício, recolha, referência, valor, transacção e estado do webhook.
+- Webhook de teste aceite mesmo com pagamentos públicos desactivados, mas apenas com segredo configurado e assinatura válida; cada evento é registado e processado de forma idempotente.
+- Reconciliação manual segura disponível no mesmo ecrã caso a entrega do webhook não seja observada.
+- Bilhete explicitamente identificado como TESTE, com QR exclusivo e leitor administrativo separado do embarque oficial.
+- Validação independente de ida e regresso, recusando automaticamente uma segunda leitura do mesmo trajecto.
+- `PAYMENTS_ENABLED=false` continua a bloquear cobranças públicas; o fluxo de teste não cria clientes, reservas, lugares, pagamentos ou bilhetes oficiais e não envia SMS.
 
 ## Ficheiros modificados
 
@@ -49,6 +57,7 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Testes: autenticação, filtros e fluxos de integração administrativos.
 - Fase 2: `src/lib/sms.ts`, página de reserva, acções administrativas, processador de notificações, integração Ziett e respectivos testes.
 - Fase 3: modelo e API de convites, página `/confirmar/[token]`, formulário personalizado, controlo administrativo, tokens assinados e testes de integração.
+- Teste integrado: modelos Prisma isolados, APIs administrativas de reserva/pagamento e bilhete, tratamento de webhook, páginas em `/admin/teste-gateway`, componentes do fluxo e teste de integração dedicado.
 
 ## Migrações aplicadas
 
@@ -57,6 +66,7 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Produção verificada após publicação na Vercel: cinco migrações reconhecidas e nenhuma migração pendente.
 - `20260928160000_sms_cost_tracking`: adiciona metadados de conteúdo, codificação, caracteres, segmentos, estado Ziett, falha e administrador à notificação. É aditiva e preserva as mensagens existentes.
 - `20260928190000_payment_invitations`: adiciona um convite individual por reserva, com nonce, expiração, confirmação, revogação e administrador criador. É aditiva e não cria pagamentos.
+- `20260928210000_integrated_gateway_test`: cria apenas `TestReservation`, `TestPayment`, `TestPaymentWebhookEvent`, `TestTicket` e `TestTicketValidation`. A migração é aditiva e não referencia lugares nem reservas oficiais.
 
 ## Testes realizados
 
@@ -73,6 +83,9 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Cobertos: assinatura e expiração de tokens, acesso inválido, criação idempotente, alteração de plano, passageiros, lugares e recolha, revogação, SMS com aviso de segmentos e ausência de cobranças.
 - `npm run build` aprovado com `/confirmar/[token]`, API pública do convite e API administrativa.
 - Teste do gateway: 14/14 testes relevantes aprovados com resposta externa simulada; confirmado que o produto é fixo, o acesso é administrativo e nenhuma linha `Payment` é criada.
+- Teste integrado dedicado numa PostgreSQL 16 temporária: 1/1 aprovado, com as seis migrações aplicadas. Cobriu acesso administrativo, confirmação manual, produto e valor fixos no servidor, idempotência da cobrança, assinatura e repetição do webhook, reconciliação, emissão única do bilhete e quatro tentativas de validação (ida aceite/recusada e regresso aceite/recusada).
+- `src/lib/integrations/payments-api.test.ts`: 8/8 testes relevantes aprovados.
+- `npm run typecheck`, `git diff --check` e `npm run build`: aprovados. Nenhuma chamada real ao gateway e nenhum SMS foram feitos pelos testes automatizados.
 
 ## Problemas encontrados
 
@@ -86,6 +99,8 @@ Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 - Links extensos podem ultrapassar um segmento. A análise assinala o custo e bloqueia envios automáticos longos até decisão administrativa.
 - O texto de pagamento solicitado contém emoji e acentos, por isso utiliza UCS-2 e vários segmentos. O painel mostra o custo estimado e exige confirmação manual antes do envio.
 - O plano histórico de três pessoas continua visível apenas quando já foi escolhido; novos ajustes oferecem Individual, Dupla e Grupo.
+- Uma falha de rede depois de iniciar a cobrança pode deixar o estado local como `UNKNOWN`; uma nova cobrança fica bloqueada para evitar duplicação. Nesse cenário deve confirmar-se a transacção no gateway antes de qualquer intervenção manual.
+- A confirmação automática depende do formato de assinatura realmente enviado pelo gateway. Se o webhook real não chegar ou não autenticar, o botão de reconciliação consulta directamente o pagamento pelo identificador guardado.
 
 ## Operação de contas administrativas
 
@@ -102,7 +117,7 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 ## Próximas tarefas
 
-- Validar o gateway Supabase integralmente em ambiente de teste depois da confirmação dos dados do convite.
-- Confirmar o método final de pagamento, expiração da cobrança, reconciliação e webhook sem duplicação.
+- Executar manualmente o novo fluxo integrado de 100 Kz em produção e observar a entrega/autenticação do webhook real.
+- Se o webhook não for aceite, recolher apenas os nomes dos cabeçalhos e o formato de assinatura disponibilizados pelo gateway e ajustar o verificador antes da activação pública.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.
 - Só depois activar `BOOKING_MODE=PAID_RESERVATION`, `SALES_ENABLED=true` e `PAYMENTS_ENABLED=true` numa abertura controlada.

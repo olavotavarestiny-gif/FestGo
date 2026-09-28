@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 import { arePaymentsEnabled } from "@/lib/pre-reservations";
+import { reconcileTestPayment } from "@/lib/test-payments";
 
 export const runtime = "nodejs";
 
@@ -40,11 +41,6 @@ function providerPaymentId(payload: unknown): string | null {
 }
 
 export async function POST(request: Request) {
-  if (!arePaymentsEnabled())
-    return NextResponse.json(
-      { error: "Webhooks de pagamento desactivados neste modo." },
-      { status: 409 },
-    );
   try {
     await enforceRateLimit({
       namespace: "payment-webhook",
@@ -95,6 +91,56 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Falta o identificador do pagamento." },
       { status: 400 },
+    );
+
+  const testPayment = await prisma.testPayment.findUnique({
+    where: { providerPaymentId: remoteId },
+  });
+  if (testPayment) {
+    if (!webhookSecret)
+      return NextResponse.json(
+        { error: "Segredo do webhook não configurado." },
+        { status: 503 },
+      );
+    const providerEventId = createHash("sha256").update(rawBody).digest("hex");
+    try {
+      const existing = await prisma.testPaymentWebhookEvent.findUnique({
+        where: { providerEventId },
+      });
+      if (existing?.processedAt)
+        return NextResponse.json({ received: true, duplicate: true, test: true });
+      const event =
+        existing ??
+        (await prisma.testPaymentWebhookEvent.create({
+          data: {
+            testPaymentId: testPayment.id,
+            providerEventId,
+            payload: payload as Prisma.InputJsonValue,
+            signatureValid,
+          },
+        }));
+      const result = await reconcileTestPayment(testPayment.id);
+      await prisma.testPaymentWebhookEvent.update({
+        where: { id: event.id },
+        data: { processedAt: new Date() },
+      });
+      return NextResponse.json({
+        received: true,
+        test: true,
+        status: result.status,
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "Não foi possível reconciliar o pagamento de teste." },
+        { status: 503 },
+      );
+    }
+  }
+
+  if (!arePaymentsEnabled())
+    return NextResponse.json(
+      { error: "Webhooks de pagamento desactivados neste modo." },
+      { status: 409 },
     );
 
   try {
