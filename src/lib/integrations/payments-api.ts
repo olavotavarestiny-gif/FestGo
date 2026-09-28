@@ -208,7 +208,14 @@ export async function reconcilePayment(localPaymentId: string) {
       const transitioned = await tx.reservation.updateMany({
         where: {
           id: local.reservationId,
-          status: { in: ["HELD", "AWAITING_PAYMENT", "PAYMENT_UNCERTAIN"] },
+          status: {
+            in: [
+              "HELD",
+              "PAYMENT_PENDING",
+              "AWAITING_PAYMENT",
+              "PAYMENT_UNCERTAIN",
+            ],
+          },
         },
         data: { status: "PAID", paidAt: new Date() },
       });

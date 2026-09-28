@@ -81,6 +81,21 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     if (
+      ![
+        "HELD",
+        "PAYMENT_PENDING",
+        "AWAITING_PAYMENT",
+        "PAYMENT_UNCERTAIN",
+      ].includes(reservation.status)
+    )
+      return NextResponse.json(
+        {
+          error:
+            "A equipa FestGO ainda não enviou o convite de pagamento para esta pré-reserva.",
+        },
+        { status: 409 },
+      );
+    if (
       reservation.status !== "PAYMENT_UNCERTAIN" &&
       (!reservation.holdExpiresAt || reservation.holdExpiresAt <= new Date())
     ) {
@@ -110,20 +125,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const subtotal = Number(reservation.unitPrice) * reservation.quantity;
     const total = Number(reservation.totalAmount);
-    let productId: string | undefined;
-    if (total === subtotal)
-      productId = normalizeProductId(process.env.PAYMENTS_PRODUCT_ID);
-    else if (total * 100 === subtotal * 95)
-      productId = normalizeProductId(
-        process.env.PAYMENTS_DISCOUNT_PRODUCT_ID,
-      );
+    const productVariables = {
+      INDIVIDUAL: "PAYMENTS_PRODUCT_INDIVIDUAL_ID",
+      DUO: "PAYMENTS_PRODUCT_DUO_ID",
+      DUO_INDIVIDUAL: "PAYMENTS_PRODUCT_DUO_INDIVIDUAL_ID",
+      GROUP: "PAYMENTS_PRODUCT_GROUP_ID",
+    } as const;
+    const productVariable = reservation.plan
+      ? productVariables[reservation.plan]
+      : undefined;
+    const productId = productVariable
+      ? normalizeProductId(process.env[productVariable])
+      : undefined;
     if (!productId)
       return NextResponse.json(
         {
-          error:
-            "Este desconto ainda não é suportado pelo processador de pagamentos.",
+          error: "O produto deste plano ainda não está configurado.",
         },
         { status: 409 },
       );
@@ -144,7 +162,7 @@ export async function POST(request: Request) {
     try {
       const remote = await createPayment({
         productId,
-        quantity: reservation.quantity,
+        quantity: 1,
         method,
         customer: {
           name: reservation.customer.fullName,

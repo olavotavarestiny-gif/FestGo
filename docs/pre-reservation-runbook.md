@@ -42,5 +42,6 @@ Para recuar a aplicação sem apagar dados, definir `PRE_RESERVATIONS_ENABLED=fa
 1. Manter `PAYMENTS_ENABLED=false` até concluir todos os itens da checklist de pagamentos.
 2. Implementar/testar o convite administrativo que transforma `PRE_RESERVED` em `PAYMENT_PENDING`, com prazo e bloqueio temporário dos lugares.
 3. Validar fornecedor, webhook, reconciliação, libertação por expiração, SMS pós-pagamento, bilhetes e QR num ambiente não produtivo.
+   Cada plano usa um produto de pacote próprio (`INDIVIDUAL`, `DUO`, `DUO_INDIVIDUAL` e `GROUP`) com quantidade 1 no gateway.
 4. Confirmar rota, horários, pontos operacionais e duração; marcar os lugares como confirmados apenas na transição fiável para `PAID`.
 5. Só depois mudar para `BOOKING_MODE=PAID_RESERVATION`, `PAYMENTS_ENABLED=true` e `SALES_ENABLED=true`, seguindo a abertura controlada.

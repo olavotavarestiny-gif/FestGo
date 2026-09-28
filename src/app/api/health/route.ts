@@ -33,8 +33,12 @@ function configuration() {
     payments: {
       endpoint: paymentEndpointValid,
       apiKey: configured("PAYMENTS_API_KEY") || configured("ApiKeyGo"),
-      standardProduct: uuidConfigured("PAYMENTS_PRODUCT_ID"),
-      discountProduct: uuidConfigured("PAYMENTS_DISCOUNT_PRODUCT_ID"),
+      products: {
+        individual: uuidConfigured("PAYMENTS_PRODUCT_INDIVIDUAL_ID"),
+        duo: uuidConfigured("PAYMENTS_PRODUCT_DUO_ID"),
+        duoIndividual: uuidConfigured("PAYMENTS_PRODUCT_DUO_INDIVIDUAL_ID"),
+        group: uuidConfigured("PAYMENTS_PRODUCT_GROUP_ID"),
+      },
       webhookSecret:
         configured("PAYMENTS_WEBHOOK_SECRET", 32) ||
         configured("Webhook_secret", 32),
