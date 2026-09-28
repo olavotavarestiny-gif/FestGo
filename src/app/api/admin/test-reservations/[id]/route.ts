@@ -11,6 +11,7 @@ import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import {
   jsonObject,
   reconcileTestPayment,
+  recoverTestPayment,
   TEST_AMOUNT,
   TEST_CURRENCY,
   TEST_PRODUCT_ID,
@@ -67,7 +68,7 @@ export async function POST(
     );
 
   if (parsed.data.action === "RECONCILE") {
-    if (!reservation.payment?.providerPaymentId)
+    if (!reservation.payment)
       return NextResponse.json(
         { error: "Ainda não existe uma transacção para consultar." },
         { status: 409 },
@@ -76,10 +77,17 @@ export async function POST(
       await enforceRateLimit({
         namespace: "admin-test-payment-reconcile",
         identifier: `${user.id}:${id}`,
-        limit: 12,
+        limit: 360,
         windowMs: 60 * 60_000,
       });
-      const result = await reconcileTestPayment(reservation.payment.id);
+      const result = reservation.payment.providerPaymentId
+        ? await reconcileTestPayment(reservation.payment.id)
+        : await recoverTestPayment(reservation.payment.id);
+      if (!result)
+        return NextResponse.json(
+          { ok: false, status: "UNKNOWN", pending: true },
+          { status: 202 },
+        );
       await prisma.auditLog.create({
         data: {
           userId: user.id,

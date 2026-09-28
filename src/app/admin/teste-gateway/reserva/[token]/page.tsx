@@ -57,7 +57,7 @@ export default async function IntegratedTestPage({
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet/15 text-violet-300"><ShieldCheck size={21} /></span>
             <h2 className="mt-5 font-black">Pagamento integrado</h2>
             <p className="mt-2 text-xs leading-5 text-white/40">A cobrança só é criada depois da tua confirmação. O valor vem exclusivamente do servidor.</p>
-            <div className="mt-5"><IntegratedTestPaymentActions reservationId={reservation.id} paymentExists={Boolean(reservation.payment)} canReconcile={Boolean(reservation.payment?.providerPaymentId)} paid={reservation.status === "PAID"} initialPaymentUrl={paymentUrl} /></div>
+            <div className="mt-5"><IntegratedTestPaymentActions reservationId={reservation.id} paymentExists={Boolean(reservation.payment)} paid={reservation.status === "PAID"} initialPaymentUrl={paymentUrl} /></div>
           </aside>
         </div>
       </div>

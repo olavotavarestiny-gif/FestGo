@@ -554,13 +554,18 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
       }),
     );
 
-    const cron = await reconcilePayments(
-      new Request("http://localhost/api/jobs/reconcile-payments", {
+    const automaticRecovery = await manageTestPayment(
+      new Request(
+        `http://localhost/api/admin/test-reservations/${reservation.id}`,
+        {
         method: "POST",
-        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-      }),
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ action: "RECONCILE" }),
+        },
+      ),
+      { params: Promise.resolve({ id: reservation.id }) },
     );
-    expect(cron.status).toBe(200);
+    expect(automaticRecovery.status).toBe(200);
     const recovered = await prisma.testReservation.findUniqueOrThrow({
       where: { id: reservation.id },
       include: { payment: true, ticket: true },

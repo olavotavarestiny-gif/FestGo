@@ -108,6 +108,7 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - A resposta de criação passa a aceitar envelopes `root`, `data`, `payment` e `data.payment`, bem como os pares `id`/`payment_id` e `amount`/`total_amount`. O identificador é persistido antes da validação e antes de qualquer redireccionamento.
 - A validação autoritativa consulta sempre `/payment-status/{id}` e exige correspondência de produto, valor, moeda, método, email e telefone antes de confirmar ou emitir o bilhete.
 - O cron de reconciliação processa pagamentos administrativos isolados mesmo com pagamentos públicos desactivados. Registos antigos sem identificador são recuperados apenas quando existe uma única venda compatível por produto, valor, moeda, método, contacto e janela temporal.
+- Como o plano Vercel Hobby limita crons a uma execução diária, a página administrativa também consulta automaticamente a cada dez segundos enquanto estiver aberta e o teste permanecer pendente. O cron diário continua como recuperação de fundo.
 - Foram adicionados diagnósticos seguros com origem e nomes das chaves da resposta, códigos de falha e eventos de auditoria, sem guardar credenciais ou dados bancários.
 
 ## Operação de contas administrativas
