@@ -46,6 +46,12 @@ export class PaymentsApiError extends Error {
   }
 }
 
+export function normalizeProductId(value: string | undefined) {
+  return value
+    ?.trim()
+    .match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+}
+
 function config() {
   const apiKey = process.env.PAYMENTS_API_KEY ?? process.env.ApiKeyGo;
   const baseUrl = process.env.PAYMENTS_API_URL;

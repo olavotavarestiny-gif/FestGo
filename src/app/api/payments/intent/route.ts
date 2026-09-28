@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   createPayment,
+  normalizeProductId,
   PaymentsApiError,
   type PaymentsApiMethod,
 } from "@/lib/integrations/payments-api";
@@ -112,9 +113,12 @@ export async function POST(request: Request) {
     const subtotal = Number(reservation.unitPrice) * reservation.quantity;
     const total = Number(reservation.totalAmount);
     let productId: string | undefined;
-    if (total === subtotal) productId = process.env.PAYMENTS_PRODUCT_ID;
+    if (total === subtotal)
+      productId = normalizeProductId(process.env.PAYMENTS_PRODUCT_ID);
     else if (total * 100 === subtotal * 95)
-      productId = process.env.PAYMENTS_DISCOUNT_PRODUCT_ID;
+      productId = normalizeProductId(
+        process.env.PAYMENTS_DISCOUNT_PRODUCT_ID,
+      );
     if (!productId)
       return NextResponse.json(
         {

@@ -9,7 +9,7 @@ function configured(name: string, minimumLength = 1) {
 }
 
 function uuidConfigured(name: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+  return /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
     process.env[name]?.trim() ?? "",
   );
 }
@@ -35,7 +35,9 @@ function configuration() {
       apiKey: configured("PAYMENTS_API_KEY") || configured("ApiKeyGo"),
       standardProduct: uuidConfigured("PAYMENTS_PRODUCT_ID"),
       discountProduct: uuidConfigured("PAYMENTS_DISCOUNT_PRODUCT_ID"),
-      webhookSecret: configured("PAYMENTS_WEBHOOK_SECRET", 32),
+      webhookSecret:
+        configured("PAYMENTS_WEBHOOK_SECRET", 32) ||
+        configured("Webhook_secret", 32),
     },
   };
 }
