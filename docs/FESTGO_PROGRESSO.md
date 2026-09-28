@@ -8,6 +8,7 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 - Autenticação administrativa validada no servidor, com cookies `HttpOnly`, `Secure` em produção, `SameSite=Strict` e sessão de oito horas.
 - Limitação de tentativas de login por endereço IP e por conta.
 - Recuperação segura por comando administrativo: a palavra-passe nunca fica no código e a alteração invalida todas as sessões anteriores da conta.
+- Contas administrativas de Olavo e Josue criadas e validadas em produção; credenciais guardadas no Porta-Chaves local do macOS.
 - Rotas, consultas, exportação CSV e acções administrativas protegidas para utilizadores `ADMIN` activos.
 - Painel responsivo com indicadores reais de inscrições, análise, aprovações, espera de pagamento, pagamentos confirmados, passageiros, procura por recolha e lugares vendidos.
 - Pesquisa por referência, contacto, telefone e nome de passageiro; filtros por evento, plano, recolha e estado; paginação e CSV com os mesmos filtros.
@@ -47,7 +48,7 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 - O painel antigo mostrava apenas pré-reservas activas e não permitia consultar todo o histórico; corrigido com filtros, paginação e ficha do cliente.
 - O estado comercial podia ser alterado, mas não existia aprovação operacional da pré-reserva; adicionada acção auditada.
 - O KukuGest continuava a receber trabalhos e possuía cron activo; ambos foram desactivados sem eliminar a integração histórica.
-- As contas Olavo e Josué exigem os respectivos e-mails reais antes da criação. As palavras-passe não devem ser enviadas por chat.
+- Não foram encontrados problemas pendentes de implementação na Fase 1.
 
 ## Operação de contas administrativas
 
@@ -64,7 +65,6 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 ## Próximas tarefas
 
-- Criar as contas de Olavo e Josué após confirmação dos e-mails e definição local das palavras-passe.
 - Fase posterior: confirmação por SMS e geração/envio manual do link de pagamento pelo painel.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.
 - Manter `PAYMENTS_ENABLED=false` até os fluxos de pagamento serem testados e aprovados.
