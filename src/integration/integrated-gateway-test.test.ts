@@ -8,6 +8,7 @@ import {
   POST as validateTestTicket,
 } from "@/app/api/admin/test-tickets/[token]/validate/route";
 import { POST as paymentWebhook } from "@/app/api/webhooks/payments/route";
+import { POST as reconcilePayments } from "@/app/api/jobs/reconcile-payments/route";
 import { createSessionToken, hashPassword } from "@/lib/auth-crypto";
 import {
   TEST_AMOUNT,
@@ -30,6 +31,7 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
     process.env.PAYMENTS_API_KEY = "simulated-gateway-key";
     process.env.PAYMENTS_WEBHOOK_SECRET =
       "simulated-webhook-secret-with-thirty-two-characters";
+    process.env.CRON_SECRET = "simulated-cron-secret-with-thirty-two-characters";
     const admin = await prisma.user.create({
       data: {
         email: `integrated-test-${randomUUID()}@example.test`,
@@ -50,6 +52,7 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
     vi.unstubAllGlobals();
     delete process.env.PAYMENTS_API_KEY;
     delete process.env.PAYMENTS_WEBHOOK_SECRET;
+    delete process.env.CRON_SECRET;
     await prisma.$disconnect();
   });
 
@@ -117,16 +120,17 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
     expect(missingConfirmation.status).toBe(400);
 
     const providerPaymentId = "b6c87ce0-e3cc-4cec-a9c6-0663d2e3f271";
+    let statusChecks = 0;
     const gatewayRequest = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/payments") && init?.method === "POST") {
         return new Response(
           JSON.stringify({
-            success: true,
-            payment_id: providerPaymentId,
+            id: providerPaymentId,
+            product_id: TEST_PRODUCT_ID,
             status: "pending",
             payment_method: "multicaixa_express",
-            total_amount: TEST_AMOUNT,
+            amount: TEST_AMOUNT,
             currency: TEST_CURRENCY,
             checkout_url: "https://gateway.example/checkout/integrated-test",
           }),
@@ -134,6 +138,7 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
         );
       }
       if (url.endsWith(`/payment-status/${providerPaymentId}`)) {
+        statusChecks += 1;
         return new Response(
           JSON.stringify({
             payment: {
@@ -141,9 +146,12 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
               product_id: TEST_PRODUCT_ID,
               amount: TEST_AMOUNT,
               currency: TEST_CURRENCY,
-              status: "paid",
+              status: statusChecks === 1 ? "pending" : "paid",
               payment_method: "multicaixa_express",
-              customer: { email: reservation.customerEmail },
+              customer: {
+                email: reservation.customerEmail,
+                phone: reservation.customerPhone,
+              },
             },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -321,4 +329,250 @@ describe.skipIf(!enabled)("integrated administrative 100 Kz gateway test", () =>
       notifications: await prisma.notification.count(),
     }).toEqual(officialBefore);
   }, 20_000);
+
+  it("persists the provider id before checkout and reconciles without a webhook", async () => {
+    const createdResponse = await createTestReservation(
+      new Request("http://localhost/api/admin/test-reservations", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-forwarded-for": "10.51.0.1",
+        },
+        body: JSON.stringify({
+          passengerName: "Teste Sem Webhook",
+          email: "no-webhook@example.test",
+          phone: "+244923123457",
+          plan: "INDIVIDUAL",
+          testSeat: "TESTE-A2",
+          pickupPreference: "11_NOVEMBRO",
+        }),
+      }),
+    );
+    const created = await createdResponse.json();
+    const reservation = await prisma.testReservation.findUniqueOrThrow({
+      where: { reference: created.reference },
+    });
+    const providerPaymentId = "c926e8c1-f1ea-4fe8-a33d-15fd44c3634d";
+    let statusChecks = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/payments") && init?.method === "POST")
+          return new Response(
+            JSON.stringify({
+              id: providerPaymentId,
+              product_id: TEST_PRODUCT_ID,
+              amount: TEST_AMOUNT,
+              currency: TEST_CURRENCY,
+              status: "pending",
+              payment_method: "multicaixa_express",
+            }),
+            { status: 201, headers: { "content-type": "application/json" } },
+          );
+        if (url.endsWith(`/payment-status/${providerPaymentId}`)) {
+          statusChecks += 1;
+          return new Response(
+            JSON.stringify({
+              payment: {
+                id: providerPaymentId,
+                product_id: TEST_PRODUCT_ID,
+                amount: TEST_AMOUNT,
+                currency: TEST_CURRENCY,
+                status: statusChecks === 1 ? "pending" : "completed",
+                payment_method: "multicaixa_express",
+                customer: {
+                  email: reservation.customerEmail,
+                  phone: reservation.customerPhone,
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ error: "unexpected request" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const started = await manageTestPayment(
+      new Request(
+        `http://localhost/api/admin/test-reservations/${reservation.id}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            action: "START_PAYMENT",
+            method: "multicaixa",
+            confirmation: true,
+          }),
+        },
+      ),
+      { params: Promise.resolve({ id: reservation.id }) },
+    );
+    expect(started.status).toBe(200);
+    const beforeCron = await prisma.testReservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      include: { payment: true, ticket: true },
+    });
+    expect(beforeCron.payment?.providerPaymentId).toBe(providerPaymentId);
+    expect(beforeCron.payment?.status).toBe("PENDING");
+    expect(beforeCron.ticket).toBeNull();
+    expect(
+      await prisma.testPaymentWebhookEvent.count({
+        where: { testPaymentId: beforeCron.payment!.id },
+      }),
+    ).toBe(0);
+
+    const cron = await reconcilePayments(
+      new Request("http://localhost/api/jobs/reconcile-payments", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+      }),
+    );
+    expect(cron.status).toBe(200);
+    expect(await cron.json()).toMatchObject({
+      publicPaymentsDisabled: true,
+      testReconciled: 1,
+      testFailed: 0,
+    });
+    const afterCron = await prisma.testReservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      include: { payment: true, ticket: true },
+    });
+    expect(afterCron.status).toBe("PAID");
+    expect(afterCron.payment?.status).toBe("SUCCEEDED");
+    expect(afterCron.ticket).not.toBeNull();
+    expect(
+      await prisma.testTicket.count({
+        where: { testReservationId: reservation.id },
+      }),
+    ).toBe(1);
+    await reconcilePayments(
+      new Request("http://localhost/api/jobs/reconcile-payments", {
+        method: "POST",
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(
+      await prisma.testTicket.count({
+        where: { testReservationId: reservation.id },
+      }),
+    ).toBe(1);
+  });
+
+  it("recovers a discarded provider id from one exact sale match", async () => {
+    const createdResponse = await createTestReservation(
+      new Request("http://localhost/api/admin/test-reservations", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-forwarded-for": "10.52.0.1",
+        },
+        body: JSON.stringify({
+          passengerName: "Teste Recuperação",
+          email: "recover-sale@example.test",
+          phone: "+244923123458",
+          plan: "INDIVIDUAL",
+          testSeat: "TESTE-A3",
+          pickupPreference: "BENFICA_GIRAFA",
+        }),
+      }),
+    );
+    const created = await createdResponse.json();
+    const reservation = await prisma.testReservation.findUniqueOrThrow({
+      where: { reference: created.reference },
+    });
+    const localPayment = await prisma.testPayment.create({
+      data: {
+        testReservationId: reservation.id,
+        idempotencyKey: `discarded-${randomUUID()}`,
+        productId: TEST_PRODUCT_ID,
+        method: "multicaixa",
+        status: "UNKNOWN",
+        amount: TEST_AMOUNT,
+        currency: TEST_CURRENCY,
+        rawStatus: "UNKNOWN",
+      },
+    });
+    const providerPaymentId = "d955fddb-df9c-4857-978b-a8136a5eb62b";
+    const saleCreatedAt = new Date(
+      localPayment.createdAt.getTime() + 4_000,
+    ).toISOString();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/sales?"))
+          return new Response(
+            JSON.stringify({
+              sales: [
+                {
+                  id: providerPaymentId,
+                  product_id: TEST_PRODUCT_ID,
+                  amount: TEST_AMOUNT,
+                  currency: TEST_CURRENCY,
+                  status: "completed",
+                  payment_method: "multicaixa_express",
+                  customer_email: reservation.customerEmail,
+                  customer_phone: reservation.customerPhone,
+                  created_at: saleCreatedAt,
+                  paid_at: saleCreatedAt,
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        if (url.endsWith(`/payment-status/${providerPaymentId}`))
+          return new Response(
+            JSON.stringify({
+              payment: {
+                id: providerPaymentId,
+                product_id: TEST_PRODUCT_ID,
+                amount: TEST_AMOUNT,
+                currency: TEST_CURRENCY,
+                status: "completed",
+                payment_method: "multicaixa_express",
+                customer: {
+                  email: reservation.customerEmail,
+                  phone: reservation.customerPhone,
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        return new Response(JSON.stringify({ error: "unexpected request" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const cron = await reconcilePayments(
+      new Request("http://localhost/api/jobs/reconcile-payments", {
+        method: "POST",
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(cron.status).toBe(200);
+    const recovered = await prisma.testReservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      include: { payment: true, ticket: true },
+    });
+    expect(recovered.payment?.providerPaymentId).toBe(providerPaymentId);
+    expect(recovered.payment?.status).toBe("SUCCEEDED");
+    expect(recovered.status).toBe("PAID");
+    expect(recovered.ticket).not.toBeNull();
+    expect(
+      await prisma.testTicket.count({
+        where: { testReservationId: reservation.id },
+      }),
+    ).toBe(1);
+  });
 });

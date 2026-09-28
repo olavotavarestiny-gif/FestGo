@@ -4,7 +4,6 @@ import { staffFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   createPayment,
-  paymentMethodMatches,
   paymentPageUrl,
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
@@ -119,6 +118,7 @@ export async function POST(
       existing: true,
       ...resultFrom(reservation.payment),
     });
+  let storedProviderPaymentId: string | null = null;
   try {
     await enforceRateLimit({
       namespace: "admin-integrated-test-payment",
@@ -164,53 +164,46 @@ export async function POST(
         phone: reservation.customerPhone,
       },
     });
-    if (
-      remote.total_amount !== TEST_AMOUNT ||
-      remote.currency !== TEST_CURRENCY ||
-      !paymentMethodMatches(parsed.data.method, remote.payment_method)
-    )
-      throw new PaymentsApiError(
-        "O gateway não devolveu a cobrança esperada de 100 Kz.",
-      );
+    storedProviderPaymentId = remote.payment_id;
     const details = {
       paymentUrl: paymentPageUrl(remote),
       reference: remote.reference ?? null,
       instructions: remote.instructions ?? remote.message ?? null,
       statusCheckUrl: remote.status_check_url ?? null,
+      responseSource: remote.diagnostics.source,
+      responseKeys: remote.diagnostics.responseKeys,
     };
-    await prisma.$transaction([
-      prisma.testPayment.update({
-        where: { id: payment.id },
-        data: {
+    // Persistir o identificador antes de qualquer validação ou redireccionamento.
+    await prisma.testPayment.update({
+      where: { id: payment.id },
+      data: {
+        providerPaymentId: remote.payment_id,
+        providerDetails: details,
+        rawStatus: remote.status,
+        status: "UNKNOWN",
+      },
+    });
+    const verified = await reconcileTestPayment(payment.id);
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: "INTEGRATED_TEST_PAYMENT_CREATED",
+        entityType: "TestReservation",
+        entityId: reservation.id,
+        metadata: {
           providerPaymentId: remote.payment_id,
-          providerDetails: details,
-          rawStatus: remote.status,
-          status: "PENDING",
+          amount: TEST_AMOUNT,
+          productId: TEST_PRODUCT_ID,
+          verifiedStatus: verified.status,
+          responseSource: remote.diagnostics.source,
         },
-      }),
-      prisma.testReservation.update({
-        where: { id: reservation.id },
-        data: { status: "AWAITING_PAYMENT" },
-      }),
-      prisma.auditLog.create({
-        data: {
-          userId: user.id,
-          action: "INTEGRATED_TEST_PAYMENT_CREATED",
-          entityType: "TestReservation",
-          entityId: reservation.id,
-          metadata: {
-            providerPaymentId: remote.payment_id,
-            amount: TEST_AMOUNT,
-            productId: TEST_PRODUCT_ID,
-          },
-          ipAddress: clientIp(request),
-        },
-      }),
-    ]);
+        ipAddress: clientIp(request),
+      },
+    });
     return NextResponse.json({
       ok: true,
       paymentId: remote.payment_id,
-      status: remote.status,
+      status: verified.status,
       amount: TEST_AMOUNT,
       currency: TEST_CURRENCY,
       ...details,
@@ -219,13 +212,33 @@ export async function POST(
     const providerError = error instanceof PaymentsApiError ? error : null;
     const knownFailure =
       Boolean(providerError?.status) && (providerError?.status ?? 500) < 500;
-    await prisma.testPayment.update({
-      where: { id: payment.id },
-      data: {
-        status: knownFailure ? "FAILED" : "UNKNOWN",
-        rawStatus: knownFailure ? `HTTP_${providerError?.status}` : "UNKNOWN",
-      },
-    });
+    await prisma.$transaction([
+      prisma.testPayment.update({
+        where: { id: payment.id },
+        data: {
+          status:
+            !storedProviderPaymentId && knownFailure ? "FAILED" : "UNKNOWN",
+          rawStatus:
+            !storedProviderPaymentId && knownFailure
+              ? `HTTP_${providerError?.status}`
+              : "UNKNOWN",
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "INTEGRATED_TEST_PAYMENT_CREATE_FAILED",
+          entityType: "TestReservation",
+          entityId: reservation.id,
+          metadata: {
+            providerPaymentId: storedProviderPaymentId,
+            diagnosticCode: providerError?.diagnosticCode ?? "UNEXPECTED_ERROR",
+            providerStatus: providerError?.status ?? null,
+          },
+          ipAddress: clientIp(request),
+        },
+      }),
+    ]);
     return NextResponse.json(
       {
         error:

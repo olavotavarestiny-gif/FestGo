@@ -86,6 +86,7 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - Teste integrado dedicado numa PostgreSQL 16 temporária: 1/1 aprovado, com as seis migrações aplicadas. Cobriu acesso administrativo, confirmação manual, produto e valor fixos no servidor, idempotência da cobrança, assinatura e repetição do webhook, reconciliação, emissão única do bilhete e quatro tentativas de validação (ida aceite/recusada e regresso aceite/recusada).
 - `src/lib/integrations/payments-api.test.ts`: 8/8 testes relevantes aprovados.
 - `npm run typecheck`, `git diff --check` e `npm run build`: aprovados. Nenhuma chamada real ao gateway e nenhum SMS foram feitos pelos testes automatizados.
+- Correcção automática: 10/10 testes unitários da API de pagamentos e 3/3 fluxos integrados numa PostgreSQL 16 temporária. Cobertos: resposta real em formato de venda, persistência imediata do ID, webhook válido/inválido/duplicado, ausência de webhook, reconciliação por ID, recuperação exacta de ID descartado e emissão única do bilhete.
 
 ## Problemas encontrados
 
@@ -102,6 +103,12 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - Uma falha de rede depois de iniciar a cobrança pode deixar o estado local como `UNKNOWN`; uma nova cobrança fica bloqueada para evitar duplicação. Nesse cenário deve confirmar-se a transacção no gateway antes de qualquer intervenção manual.
 - A confirmação automática depende do formato de assinatura realmente enviado pelo gateway. Se o webhook real não chegar ou não autenticar, o botão de reconciliação consulta directamente o pagamento pelo identificador guardado.
 - O primeiro teste integrado revelou que o gateway devolve `multicaixa_express` embora o pedido utilize `multicaixa`. A equivalência foi normalizada na criação e reconciliação para não perder o identificador de uma cobrança já criada.
+- O segundo teste comprovou uma segunda incompatibilidade: a cobrança foi criada, mas a resposta real não respeitou integralmente o formato rígido inicialmente assumido (`success`, `payment_id` e `total_amount`). A rota respondeu `202`, deixou o pagamento como `UNKNOWN` e não guardou o identificador, apesar de a venda existir no gateway.
+- Os logs da mesma janela confirmaram ausência total de chamadas a `/api/webhooks/payments`; não houve rejeição de assinatura. O reconciliador também terminava antecipadamente com `PAYMENTS_ENABLED=false`, impedindo a recuperação dos testes administrativos.
+- A resposta de criação passa a aceitar envelopes `root`, `data`, `payment` e `data.payment`, bem como os pares `id`/`payment_id` e `amount`/`total_amount`. O identificador é persistido antes da validação e antes de qualquer redireccionamento.
+- A validação autoritativa consulta sempre `/payment-status/{id}` e exige correspondência de produto, valor, moeda, método, email e telefone antes de confirmar ou emitir o bilhete.
+- O cron de reconciliação processa pagamentos administrativos isolados mesmo com pagamentos públicos desactivados. Registos antigos sem identificador são recuperados apenas quando existe uma única venda compatível por produto, valor, moeda, método, contacto e janela temporal.
+- Foram adicionados diagnósticos seguros com origem e nomes das chaves da resposta, códigos de falha e eventos de auditoria, sem guardar credenciais ou dados bancários.
 
 ## Operação de contas administrativas
 

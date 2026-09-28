@@ -80,18 +80,25 @@ export async function POST(request: Request) {
       (direct && equal(direct, webhookSecret)) ||
         (suppliedHmac && equal(suppliedHmac, expectedHmac)),
     );
-    if (!signatureValid)
+    if (!signatureValid) {
+      console.warn("payment_webhook_rejected", { reason: "invalid_signature" });
       return NextResponse.json(
         { error: "Assinatura inválida." },
         { status: 401 },
       );
+    }
   }
   const remoteId = providerPaymentId(payload);
-  if (!remoteId)
+  if (!remoteId) {
+    console.warn("payment_webhook_rejected", {
+      reason: "missing_payment_id",
+      signatureValid,
+    });
     return NextResponse.json(
       { error: "Falta o identificador do pagamento." },
       { status: 400 },
     );
+  }
 
   const testPayment = await prisma.testPayment.findUnique({
     where: { providerPaymentId: remoteId },
@@ -129,7 +136,12 @@ export async function POST(request: Request) {
         test: true,
         status: result.status,
       });
-    } catch {
+    } catch (error) {
+      console.error("test_payment_webhook_reconciliation_failed", {
+        providerPaymentId: remoteId,
+        error:
+          error instanceof Error ? error.name : "UnknownReconciliationError",
+      });
       return NextResponse.json(
         { error: "Não foi possível reconciliar o pagamento de teste." },
         { status: 503 },

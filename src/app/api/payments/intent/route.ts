@@ -171,6 +171,19 @@ export async function POST(request: Request) {
           phone: reservation.customer.phone,
         },
       });
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          providerPaymentId: remote.payment_id,
+          rawStatus: remote.status,
+          status: "UNKNOWN",
+          providerDetails: {
+            productId,
+            responseSource: remote.diagnostics.source,
+            responseKeys: remote.diagnostics.responseKeys,
+          },
+        },
+      });
       if (
         remote.total_amount !== total ||
         remote.currency !== reservation.currency ||
@@ -181,6 +194,8 @@ export async function POST(request: Request) {
         );
       const details = {
         productId,
+        responseSource: remote.diagnostics.source,
+        responseKeys: remote.diagnostics.responseKeys,
         entity: remote.reference?.entity ?? null,
         reference: remote.reference?.reference_number ?? null,
         expiresAt: remote.reference?.expiration_date ?? null,

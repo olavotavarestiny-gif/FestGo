@@ -4,6 +4,7 @@ import { staffFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   createPayment,
+  paymentMethodMatches,
   paymentPageUrl,
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
@@ -69,7 +70,9 @@ export async function POST(request: Request) {
       },
     });
     const matchesExpectedAmount =
-      result.total_amount === TEST_AMOUNT && result.currency === "AOA";
+      result.total_amount === TEST_AMOUNT &&
+      result.currency === "AOA" &&
+      paymentMethodMatches(parsed.data.method, result.payment_method);
     await prisma.auditLog.create({
       data: {
         userId: user.id,

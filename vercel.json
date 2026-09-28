@@ -3,6 +3,6 @@
   "buildCommand": "prisma generate && prisma migrate deploy && npm run db:seed && next build",
   "crons": [
     { "path": "/api/jobs/notifications", "schedule": "10 3 * * *" },
-    { "path": "/api/jobs/reconcile-payments", "schedule": "0 3 * * *" }
+    { "path": "/api/jobs/reconcile-payments", "schedule": "*/5 * * * *" }
   ]
 }
