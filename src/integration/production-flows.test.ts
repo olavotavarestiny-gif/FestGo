@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as createReservation } from "@/app/api/reservations/route";
 import { POST as createPreReservationLead } from "@/app/api/pre-reservations/lead/route";
@@ -408,6 +408,18 @@ describe.skipIf(!enabled)("production database flows", () => {
       where: { status: "PRE_RESERVED" },
       include: { seatPreferences: true },
     });
+    const anonymousSms = await updatePreReservation(
+      new Request(
+        `http://localhost/api/admin/pre-reservations/${reservation.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "SEND_APPROVAL_SMS" }),
+        },
+      ),
+      { params: Promise.resolve({ id: reservation.id }) },
+    );
+    expect(anonymousSms.status).toBe(401);
     const response = await updatePreReservation(
       new Request(
         `http://localhost/api/admin/pre-reservations/${reservation.id}`,
@@ -440,5 +452,108 @@ describe.skipIf(!enabled)("production database flows", () => {
         },
       }),
     ).toBe(1);
+
+    process.env.ZIETT_API_KEY = "test-key";
+    process.env.ZIETT_SMS_REMITTER_ID = "00000000-0000-0000-0000-000000000001";
+    const ziettRequest = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ message_id: "approval-message-1", status: "QUEUED" }),
+        { status: 202, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", ziettRequest);
+    const sendApproval = () => updatePreReservation(
+      new Request(
+        `http://localhost/api/admin/pre-reservations/${reservation.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ action: "SEND_APPROVAL_SMS" }),
+        },
+      ),
+      { params: Promise.resolve({ id: reservation.id }) },
+    );
+    expect((await sendApproval()).status).toBe(200);
+    const notification = await prisma.notification.findUniqueOrThrow({
+      where: {
+        reservationId_channel_template: {
+          reservationId: reservation.id,
+          channel: "SMS",
+          template: "PRE_RESERVATION_APPROVED",
+        },
+      },
+    });
+    expect(notification.status).toBe("SENT");
+    expect(notification.content).toContain(reservation.reference);
+    expect(notification.encoding).toBe("GSM-7");
+    expect(notification.segmentCount).toBe(1);
+    expect(notification.requestedById).toBe(admin.id);
+    expect(notification.providerMessageId).toBe("approval-message-1");
+    expect((await sendApproval()).status).toBe(409);
+    expect(ziettRequest).toHaveBeenCalledOnce();
+
+    const retryReservation = await prisma.reservation.findFirstOrThrow({
+      where: { status: "PRE_RESERVED", id: { not: reservation.id } },
+    });
+    const approveRetryReservation = await updatePreReservation(
+      new Request(
+        `http://localhost/api/admin/pre-reservations/${retryReservation.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ action: "APPROVE" }),
+        },
+      ),
+      { params: Promise.resolve({ id: retryReservation.id }) },
+    );
+    expect(approveRetryReservation.status).toBe(200);
+    ziettRequest
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ trace_id: "trace-failure" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ message_id: "approval-message-2", status: "QUEUED" }),
+          { status: 202, headers: { "content-type": "application/json" } },
+        ),
+      );
+    const sendRetryApproval = () => updatePreReservation(
+      new Request(
+        `http://localhost/api/admin/pre-reservations/${retryReservation.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ action: "SEND_APPROVAL_SMS" }),
+        },
+      ),
+      { params: Promise.resolve({ id: retryReservation.id }) },
+    );
+    expect((await sendRetryApproval()).status).toBe(502);
+    let retriedNotification = await prisma.notification.findUniqueOrThrow({
+      where: {
+        reservationId_channel_template: {
+          reservationId: retryReservation.id,
+          channel: "SMS",
+          template: "PRE_RESERVATION_APPROVED",
+        },
+      },
+    });
+    expect(retriedNotification.status).toBe("FAILED");
+    expect(retriedNotification.attempts).toBe(1);
+    expect(retriedNotification.providerStatus).toBe("HTTP_503");
+    expect((await sendRetryApproval()).status).toBe(200);
+    retriedNotification = await prisma.notification.findUniqueOrThrow({
+      where: { id: retriedNotification.id },
+    });
+    expect(retriedNotification.status).toBe("SENT");
+    expect(retriedNotification.attempts).toBe(2);
+    expect(retriedNotification.providerMessageId).toBe("approval-message-2");
+    expect(ziettRequest).toHaveBeenCalledTimes(3);
+    vi.unstubAllGlobals();
+    delete process.env.ZIETT_API_KEY;
+    delete process.env.ZIETT_SMS_REMITTER_ID;
   });
 });

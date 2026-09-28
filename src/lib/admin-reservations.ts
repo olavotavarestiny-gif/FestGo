@@ -3,7 +3,7 @@ import { commercialPlans, pickupPreferences } from "@/lib/pre-reservations";
 
 export const reservationStatusLabels: Record<ReservationStatus, string> = {
   LEAD: "Inscrição incompleta",
-  PRE_RESERVED: "Por analisar",
+  PRE_RESERVED: "Inscrição recebida",
   PAYMENT_PENDING: "Pré-reserva aprovada",
   WAITLIST: "Lista de espera",
   HELD: "Lugar reservado",

@@ -34,14 +34,14 @@ export async function sendSms({
   phone: string;
   content: string;
   idempotencyKey: string;
-}): Promise<{ messageId: string }> {
+}): Promise<{ messageId: string; providerStatus: string }> {
   const apiKey = process.env.ZIETT_API_KEY ?? process.env.SMS_PROVIDER_API_KEY;
   const remitterId = process.env.ZIETT_SMS_REMITTER_ID;
   if (!apiKey)
     throw new ZiettError("Falta configurar ZIETT_API_KEY no servidor.");
   if (!remitterId)
     throw new ZiettError("Falta configurar ZIETT_SMS_REMITTER_ID no servidor.");
-  if (!content.trim() || content.length > 640)
+  if (!content.trim() || content.length > 1600)
     throw new ZiettError("O conteúdo do SMS é inválido.");
 
   const response = await fetch(ZIETT_MESSAGES_URL, {
@@ -75,7 +75,7 @@ export async function sendSms({
     throw new ZiettError(
       "A Ziett aceitou o pedido sem devolver o identificador da mensagem.",
     );
-  return { messageId };
+  return { messageId, providerStatus: data.status ?? "ACCEPTED" };
 }
 
 export async function sendOtpSms({

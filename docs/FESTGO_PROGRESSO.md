@@ -1,7 +1,7 @@
 # FestGO — Progresso
 
 Última actualização: 28 de Setembro de 2026  
-Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
+Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custos SMS**
 
 ## Funcionalidades concluídas
 
@@ -18,7 +18,15 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 - Pontos conferidos: Cidade — Primeiro de Maio, Talatona — Belas Shopping, 11 de Novembro, Benfica — Girafa e Outro.
 - Sincronização automática com KukuGest desactivada por omissão; cron removido e código histórico preservado.
 - Cabeçalhos `no-store` e `noindex` adicionados às páginas administrativas.
-- Pagamentos mantidos desactivados; nenhuma alteração ao gateway, QR Codes ou envio Ziett.
+- Pagamentos mantidos desactivados; gateway e QR Codes não foram alterados. As credenciais Ziett permaneceram intactas e configuráveis por ambiente.
+- Página privada dedicada a cada reserva, com cliente, plano, passageiros, lugares, recolha, estado e histórico de operações.
+- Aprovação e envio separados: aprovar nunca cria pagamento nem envia uma mensagem automaticamente.
+- SMS de aprovação enviado manualmente apenas após a aprovação, com confirmação explícita do administrador.
+- Templates transaccionais curtos em GSM-7 para inscrição, aprovação, futuro pagamento e futura confirmação de compra.
+- Pré-visualização do texto final com referência real, contagem de caracteres, codificação e estimativa de segmentos.
+- Bloqueio de mensagens automáticas fora de GSM-7 ou acima de um segmento; nenhuma divisão silenciosa.
+- Três tentativas máximas, recuperação de processamento interrompido, idempotência Ziett e unicidade na PostgreSQL.
+- Identificador e estado devolvidos pela Ziett, conteúdo final, segmentos, falhas, administrador e datas guardados no histórico.
 
 ## Ficheiros modificados
 
@@ -27,12 +35,14 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 - APIs administrativas: exportação CSV e gestão/aprovação de pré-reservas.
 - Configuração operacional: `vercel.json`, `.env.example`, `next.config.ts` e protecções do KukuGest.
 - Testes: autenticação, filtros e fluxos de integração administrativos.
+- Fase 2: `src/lib/sms.ts`, página de reserva, acções administrativas, processador de notificações, integração Ziett e respectivos testes.
 
 ## Migrações aplicadas
 
 - `20260928140000_staff_session_version`: adiciona `User.sessionVersion` com valor inicial `1`; migração aditiva, sem apagar ou transformar inscrições.
 - Validada juntamente com todo o histórico de migrações numa PostgreSQL 16 temporária.
 - Produção verificada após publicação na Vercel: três migrações reconhecidas e nenhuma migração pendente.
+- `20260928160000_sms_cost_tracking`: adiciona metadados de conteúdo, codificação, caracteres, segmentos, estado Ziett, falha e administrador à notificação. É aditiva e preserva as mensagens existentes.
 
 ## Testes realizados
 
@@ -41,6 +51,10 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 - PostgreSQL 16 temporária — três migrações e seed aplicados com sucesso.
 - `TEST_DATABASE_URL=... npm test` — 20 testes aprovados, incluindo login, cookies seguros, autorização, protecção do CSV, aprovação atómica, concorrência de lugares e integridade dos planos.
 - `npm run build` — build de produção aprovado, incluindo `/admin` e `/admin/clientes/[id]`.
+- Fase 2: 20 testes unitários aprovados sem base externa.
+- PostgreSQL 16 temporária: quatro migrações e seed aplicados com sucesso.
+- Fase 2 com `TEST_DATABASE_URL`: 26 testes aprovados, incluindo aprovação, permissões, GSM-7, links longos, falha Ziett, repetição controlada e bloqueio de duplicados.
+- Nenhum SMS real foi enviado pelos testes; as respostas Ziett foram simuladas.
 
 ## Problemas encontrados
 
@@ -49,6 +63,9 @@ Fase concluída neste ciclo: **Fase 1 — painel administrativo privado**
 - O estado comercial podia ser alterado, mas não existia aprovação operacional da pré-reserva; adicionada acção auditada.
 - O KukuGest continuava a receber trabalhos e possuía cron activo; ambos foram desactivados sem eliminar a integração histórica.
 - Não foram encontrados problemas pendentes de implementação na Fase 1.
+- A mensagem de inscrição anterior era longa, continha emoji e podia consumir vários segmentos UCS-2; substituída pelo template GSM-7 curto.
+- O reenvio anterior permitia voltar a colocar mensagens já enviadas na fila; agora mensagens aceites não podem ser duplicadas.
+- Links extensos podem ultrapassar um segmento. A análise assinala o custo e bloqueia envios automáticos longos até decisão administrativa.
 
 ## Operação de contas administrativas
 
@@ -65,6 +82,6 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 ## Próximas tarefas
 
-- Fase posterior: confirmação por SMS e geração/envio manual do link de pagamento pelo painel.
+- Fase posterior: geração do link de pagamento e envio manual usando o template já preparado.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.
 - Manter `PAYMENTS_ENABLED=false` até os fluxos de pagamento serem testados e aprovados.

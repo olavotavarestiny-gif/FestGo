@@ -12,7 +12,6 @@ import {
 import { Logo } from "@/components/logo";
 import { AdminActions } from "@/components/admin-actions";
 import { EventPreReservationSettings } from "@/components/event-pre-reservation-settings";
-import { PreReservationAdminActions } from "@/components/pre-reservation-admin-actions";
 import {
   filtersQuery,
   parseAdminReservationFilters,
@@ -98,10 +97,6 @@ export default async function AdminPage({
         seatPreferences: {
           where: { releasedAt: null },
           orderBy: { seatNumber: "asc" },
-        },
-        notifications: {
-          where: { template: "PRE_RESERVATION_RECEIVED" },
-          take: 1,
         },
         contactActivities: { orderBy: { createdAt: "desc" }, take: 1 },
       },
@@ -204,7 +199,7 @@ export default async function AdminPage({
                       <td className="px-5 py-4">{reservation.pickupOther || reservation.pickupPreference || "Por definir"}</td>
                       <td className="px-5 py-4">{reservation.seatPreferences.length ? reservation.seatPreferences.map((seat) => seat.seatNumber).join(", ") : reservation.status === "WAITLIST" ? "Espera" : "—"}</td>
                       <td className="px-5 py-4"><StatusBadge status={reservation.status} /><small className="mt-2 block text-white/40">{contactLabels[reservation.contactStatus]}</small></td>
-                      <td className="px-5 py-4"><PreReservationAdminActions id={reservation.id} current={reservation.contactStatus} reservationStatus={reservation.status} canResendSms={reservation.notifications.length > 0} />{reservation.contactActivities[0]?.comment && <small className="mt-2 block max-w-[260px] text-white/35">Último: {reservation.contactActivities[0].comment}</small>}</td>
+                      <td className="px-5 py-4"><Link className="btn-primary min-h-9 px-4 py-2 text-xs" href={`/admin/reservas/${reservation.id}`}>Abrir reserva</Link>{reservation.contactActivities[0]?.comment && <small className="mt-2 block max-w-[260px] text-white/35">Último: {reservation.contactActivities[0].comment}</small>}</td>
                     </tr>
                   ))}
                   {!reservations.length && <tr><td colSpan={7} className="px-6 py-10 text-center text-white/35">Nenhuma inscrição encontrada.</td></tr>}
@@ -218,7 +213,7 @@ export default async function AdminPage({
                   <div className="flex items-start justify-between gap-3"><div><b className="font-mono text-sm">{reservation.reference}</b><small className="mt-1 block text-white/35">{reservation.createdAt.toLocaleDateString("pt-AO", { timeZone: "Africa/Luanda" })}</small></div><StatusBadge status={reservation.status} /></div>
                   <div><Link className="font-bold text-violet-300" href={`/admin/clientes/${reservation.customer.id}`}>{reservation.customer.fullName}</Link><p className="mt-1 text-xs text-white/45">{reservation.customer.phone}</p><p className="mt-2 text-xs text-white/55">{reservation.passengers.map((passenger) => passenger.fullName).join(" · ") || "Sem passageiros concluídos"}</p></div>
                   <div className="grid grid-cols-2 gap-3 text-xs"><Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Por definir"} /><Data label="Recolha" value={reservation.pickupOther || reservation.pickupPreference || "Por definir"} /><Data label="Passageiros" value={String(reservation.quantity)} /><Data label="Total" value={formatKz(Number(reservation.totalAmount))} /></div>
-                  <PreReservationAdminActions id={reservation.id} current={reservation.contactStatus} reservationStatus={reservation.status} canResendSms={reservation.notifications.length > 0} />
+                  <Link className="btn-primary w-full" href={`/admin/reservas/${reservation.id}`}>Abrir reserva</Link>
                 </article>
               ))}
               {!reservations.length && <p className="p-8 text-center text-sm text-white/35">Nenhuma inscrição encontrada.</p>}

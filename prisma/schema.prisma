@@ -97,6 +97,7 @@ model User {
   auditLogs         AuditLog[]
   ticketValidations TicketValidation[]
   contactActivities ContactActivity[]
+  notificationsRequested Notification[] @relation("NotificationRequestedBy")
 }
 
 model Customer {
@@ -357,13 +358,22 @@ model Notification {
   template          String
   status            String              @default("PENDING")
   providerMessageId String?
+  providerStatus    String?
+  content           String?
+  encoding          String?
+  characterCount    Int?
+  segmentCount      Int?
   attempts          Int                 @default(0)
+  lastError         String?
+  requestedById     String?
+  requestedBy       User?               @relation("NotificationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   sentAt            DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
   @@unique([reservationId, channel, template])
   @@index([status, createdAt])
+  @@index([requestedById, createdAt])
 }
 
 model SeatPreference {

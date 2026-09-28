@@ -86,6 +86,7 @@ export default async function CustomerPage({
                 <History title="Acompanhamento" empty="Sem acompanhamento.">{reservation.contactActivities.map((activity) => <li key={activity.id}><b>{activity.user?.name ?? "Sistema"}</b> · {activity.outcome}<small>{activity.comment || "Sem comentário"} · {activity.createdAt.toLocaleString("pt-AO", { timeZone: "Africa/Luanda" })}</small></li>)}</History>
                 <History title="Pagamentos" empty="Sem pagamentos registados.">{reservation.payments.map((payment) => <li key={payment.id}><b>{payment.status}</b> · {formatKz(Number(payment.amount))}<small>{payment.createdAt.toLocaleString("pt-AO", { timeZone: "Africa/Luanda" })}</small></li>)}</History>
               </div>
+              <Link className="btn-primary mt-6" href={`/admin/reservas/${reservation.id}`}>Gerir reserva</Link>
             </article>
           ))}
           {!customer.reservations.length && <p className="card p-8 text-center text-sm text-white/40">Este contacto ainda não tem reservas.</p>}

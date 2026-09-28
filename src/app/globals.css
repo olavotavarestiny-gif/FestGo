@@ -279,6 +279,18 @@ body { margin: 0; background: #0c0a12; color: #fff; font-family: var(--font-manr
 .admin-followup input { grid-column:1/-1; }
 .admin-followup small { grid-column:1/-1; color:rgba(255,255,255,.45); }
 .admin-followup .admin-approve { grid-column:1/-1; min-height:42px; background:#7622c7; font-size:11px; }
+.admin-action-card { border:1px solid rgba(255,255,255,.09); border-radius:18px; background:rgba(255,255,255,.035); padding:18px; }
+.admin-action-card h3 { font-size:14px; font-weight:900; }
+.admin-action-card>p { margin-top:7px; color:rgba(255,255,255,.48); font-size:11px; line-height:1.6; }
+.admin-action-card .admin-approve,.admin-secondary-action { min-height:42px; border-radius:11px; background:#7622c7; padding:0 15px; color:#fff; font-size:11px; font-weight:900; }
+.admin-secondary-action { margin-right:8px; }
+.admin-secondary-action.admin-danger { background:#6f2631; }
+.sms-preview { margin:13px 0 0; border-left:3px solid #9b45ed; border-radius:0 10px 10px 0; background:rgba(118,34,199,.12); padding:13px; color:rgba(255,255,255,.88); font-size:12px; line-height:1.55; }
+.sms-meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+.sms-meta span,.sms-cost-ok,.sms-cost-warning { border-radius:999px; background:rgba(255,255,255,.07); padding:5px 8px; color:rgba(255,255,255,.58); font-size:9px; font-weight:850; }
+.sms-cost-ok { background:rgba(16,185,129,.13); color:#6ee7b7; }
+.sms-cost-warning,.sms-warning { color:#fda4af; }
+.sms-warning { margin-top:10px; font-size:11px; line-height:1.5; }
 .admin-settings { display:grid; gap:11px; }
 .admin-settings label { display:grid; gap:6px; color:rgba(255,255,255,.5); font-size:11px; }
 .admin-settings .admin-check { display:flex; grid-auto-flow:column; align-items:center; justify-content:start; }

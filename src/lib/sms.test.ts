@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import { analyzeSms, smsTemplates } from "./sms";
+
+describe("SMS cost estimation", () => {
+  it("keeps registration and approval messages in one GSM-7 segment", () => {
+    for (const content of [
+      smsTemplates.preReservationReceived("FGP-2026-ABC123"),
+      smsTemplates.preReservationApproved("FGP-2026-ABC123"),
+    ]) {
+      const result = analyzeSms(content);
+      expect(result.encoding).toBe("GSM-7");
+      expect(result.segments).toBe(1);
+      expect(result.characterCount).toBeLessThanOrEqual(160);
+    }
+  });
+
+  it("counts GSM-7 extension characters as two units", () => {
+    const result = analyzeSms("Valor {teste}");
+    expect(result.characterCount).toBe(13);
+    expect(result.units).toBe(15);
+    expect(result.encoding).toBe("GSM-7");
+  });
+
+  it("detects UCS-2 when the final message contains unsupported characters", () => {
+    const result = analyzeSms("Aprovação concluída");
+    expect(result.encoding).toBe("UCS-2");
+    expect(result.singleSegmentLimit).toBe(70);
+  });
+
+  it("estimates multiple segments after substituting a long real link", () => {
+    const link = `https://festgo.mazanga.digital/pagamento?token=${"a".repeat(180)}`;
+    const result = analyzeSms(smsTemplates.paymentLink(link));
+    expect(result.encoding).toBe("GSM-7");
+    expect(result.segments).toBeGreaterThan(1);
+    expect(result.isSingleSegment).toBe(false);
+  });
+});
