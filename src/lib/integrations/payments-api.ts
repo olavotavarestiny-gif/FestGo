@@ -7,7 +7,7 @@ export type PaymentsApiCreateResult = {
   success: boolean;
   payment_id: string;
   status: string;
-  payment_method: PaymentsApiMethod;
+  payment_method: string;
   total_amount: number;
   currency: string;
   message?: string;
@@ -34,7 +34,7 @@ type PaymentsApiStatusResult = {
     amount: number;
     currency: string;
     status: string;
-    payment_method: PaymentsApiMethod;
+    payment_method: string;
     customer?: { name?: string; email?: string; phone?: string };
     merchant_transaction_id?: string;
     paid_at?: string | null;
@@ -55,6 +55,28 @@ export function normalizeProductId(value: string | undefined) {
   return value
     ?.trim()
     .match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+}
+
+export function paymentMethodMatches(
+  expected: PaymentsApiMethod | string,
+  received: string,
+) {
+  const normalize = (value: string) => {
+    const method = value.trim().toLowerCase().replace(/[-\s]+/g, "_");
+    if (["multicaixa", "multicaixa_express", "express"].includes(method))
+      return "multicaixa";
+    if (
+      [
+        "reference",
+        "referencia",
+        "multicaixa_reference",
+        "multicaixa_referencia",
+      ].includes(method)
+    )
+      return "reference";
+    return method;
+  };
+  return normalize(expected) === normalize(received);
 }
 
 function config() {
@@ -128,7 +150,7 @@ export async function createPayment(input: {
     !result.payment_id ||
     !Number.isFinite(result.total_amount) ||
     result.currency !== "AOA" ||
-    result.payment_method !== input.method
+    !paymentMethodMatches(input.method, result.payment_method)
   ) {
     throw new PaymentsApiError(
       "A API devolveu uma resposta de pagamento inválida.",
@@ -204,7 +226,7 @@ export async function reconcilePayment(localPaymentId: string) {
   if (
     remote.amount !== Number(local.amount) ||
     remote.currency !== local.currency ||
-    remote.payment_method !== local.method ||
+    !paymentMethodMatches(local.method, remote.payment_method) ||
     (remote.product_id && remote.product_id !== details.productId) ||
     (remote.customer?.email &&
       remote.customer.email.toLowerCase() !==

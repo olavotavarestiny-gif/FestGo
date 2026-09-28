@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mapStatus, normalizeProductId, paymentPageUrl } from "./payments-api";
+import {
+  mapStatus,
+  normalizeProductId,
+  paymentMethodMatches,
+  paymentPageUrl,
+} from "./payments-api";
 
 describe("payment status mapping", () => {
   it.each([
@@ -28,6 +33,15 @@ describe("payment page URL", () => {
       .toBe("https://pay.example/test");
     expect(paymentPageUrl({ ...base, checkout_url: "javascript:alert(1)" }))
       .toBeNull();
+  });
+});
+
+describe("payment method normalization", () => {
+  it("accepts the Multicaixa Express name returned by the gateway", () => {
+    expect(paymentMethodMatches("multicaixa", "multicaixa_express")).toBe(true);
+    expect(paymentMethodMatches("multicaixa", "express")).toBe(true);
+    expect(paymentMethodMatches("reference", "multicaixa_reference")).toBe(true);
+    expect(paymentMethodMatches("reference", "multicaixa_express")).toBe(false);
   });
 });
 

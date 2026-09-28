@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import {
   getPayment,
   mapStatus,
+  paymentMethodMatches,
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
 
@@ -20,7 +21,7 @@ export async function reconcileTestPayment(testPaymentId: string) {
   if (
     remote.amount !== TEST_AMOUNT ||
     remote.currency !== TEST_CURRENCY ||
-    remote.payment_method !== local.method ||
+    !paymentMethodMatches(local.method, remote.payment_method) ||
     (remote.product_id && remote.product_id !== TEST_PRODUCT_ID) ||
     (remote.customer?.email &&
       remote.customer.email.toLowerCase() !==

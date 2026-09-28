@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   createPayment,
   normalizeProductId,
+  paymentMethodMatches,
   PaymentsApiError,
   type PaymentsApiMethod,
 } from "@/lib/integrations/payments-api";
@@ -173,7 +174,7 @@ export async function POST(request: Request) {
       if (
         remote.total_amount !== total ||
         remote.currency !== reservation.currency ||
-        remote.payment_method !== method
+        !paymentMethodMatches(method, remote.payment_method)
       )
         throw new PaymentsApiError(
           "A resposta da API não corresponde ao total da reserva.",

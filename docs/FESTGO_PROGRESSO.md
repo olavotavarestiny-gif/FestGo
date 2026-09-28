@@ -101,6 +101,7 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - O plano histórico de três pessoas continua visível apenas quando já foi escolhido; novos ajustes oferecem Individual, Dupla e Grupo.
 - Uma falha de rede depois de iniciar a cobrança pode deixar o estado local como `UNKNOWN`; uma nova cobrança fica bloqueada para evitar duplicação. Nesse cenário deve confirmar-se a transacção no gateway antes de qualquer intervenção manual.
 - A confirmação automática depende do formato de assinatura realmente enviado pelo gateway. Se o webhook real não chegar ou não autenticar, o botão de reconciliação consulta directamente o pagamento pelo identificador guardado.
+- O primeiro teste integrado revelou que o gateway devolve `multicaixa_express` embora o pedido utilize `multicaixa`. A equivalência foi normalizada na criação e reconciliação para não perder o identificador de uma cobrança já criada.
 
 ## Operação de contas administrativas
 

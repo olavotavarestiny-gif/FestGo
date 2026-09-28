@@ -4,6 +4,7 @@ import { staffFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   createPayment,
+  paymentMethodMatches,
   paymentPageUrl,
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
@@ -166,7 +167,7 @@ export async function POST(
     if (
       remote.total_amount !== TEST_AMOUNT ||
       remote.currency !== TEST_CURRENCY ||
-      remote.payment_method !== parsed.data.method
+      !paymentMethodMatches(parsed.data.method, remote.payment_method)
     )
       throw new PaymentsApiError(
         "O gateway não devolveu a cobrança esperada de 100 Kz.",
