@@ -85,19 +85,20 @@ enum JobStatus {
 }
 
 model User {
-  id                String             @id @default(cuid())
-  email             String             @unique
-  name              String
-  passwordHash      String
-  sessionVersion    Int                @default(1)
-  role              UserRole           @default(OPERATOR)
-  active            Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  auditLogs         AuditLog[]
-  ticketValidations TicketValidation[]
-  contactActivities ContactActivity[]
-  notificationsRequested Notification[] @relation("NotificationRequestedBy")
+  id                        String              @id @default(cuid())
+  email                     String              @unique
+  name                      String
+  passwordHash              String
+  sessionVersion            Int                 @default(1)
+  role                      UserRole            @default(OPERATOR)
+  active                    Boolean             @default(true)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  auditLogs                 AuditLog[]
+  ticketValidations         TicketValidation[]
+  contactActivities         ContactActivity[]
+  notificationsRequested    Notification[]      @relation("NotificationRequestedBy")
+  paymentInvitationsCreated PaymentInvitation[] @relation("PaymentInvitationCreatedBy")
 }
 
 model Customer {
@@ -117,27 +118,27 @@ model Customer {
 }
 
 model Event {
-  id                  String        @id @default(cuid())
-  slug                String        @unique
-  name                String
-  venue               String
-  eventDate           DateTime
-  returnAt            DateTime?
-  basePrice           Decimal       @db.Decimal(12, 2)
-  currency            String        @default("AOA")
-  capacity            Int
-  salesOpenAt         DateTime?
-  salesCloseAt        DateTime?
-  ticketIncludesEntry Boolean       @default(false)
-  status              EventStatus   @default(DRAFT)
+  id                      String           @id @default(cuid())
+  slug                    String           @unique
+  name                    String
+  venue                   String
+  eventDate               DateTime
+  returnAt                DateTime?
+  basePrice               Decimal          @db.Decimal(12, 2)
+  currency                String           @default("AOA")
+  capacity                Int
+  salesOpenAt             DateTime?
+  salesCloseAt            DateTime?
+  ticketIncludesEntry     Boolean          @default(false)
+  status                  EventStatus      @default(DRAFT)
   estimatedTravelDuration String?
-  travelEstimateConfirmed Boolean   @default(false)
-  routes              Route[]
-  reservations        Reservation[]
-  seatPreferences     SeatPreference[]
-  discounts           Discount[]
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  travelEstimateConfirmed Boolean          @default(false)
+  routes                  Route[]
+  reservations            Reservation[]
+  seatPreferences         SeatPreference[]
+  discounts               Discount[]
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 }
 
 model Route {
@@ -156,15 +157,15 @@ model Route {
 }
 
 model PickupPoint {
-  id           String        @id @default(cuid())
-  routeId      String
-  route        Route         @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  name         String
-  address      String
-  departureAt  DateTime?
-  operationalConfirmed Boolean @default(false)
-  sortOrder    Int
-  reservations Reservation[]
+  id                   String        @id @default(cuid())
+  routeId              String
+  route                Route         @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name                 String
+  address              String
+  departureAt          DateTime?
+  operationalConfirmed Boolean       @default(false)
+  sortOrder            Int
+  reservations         Reservation[]
 
   @@unique([routeId, name])
 }
@@ -178,49 +179,50 @@ model Vehicle {
 }
 
 model Reservation {
-  id                 String                 @id @default(cuid())
-  reference          String                 @unique
-  eventId            String
-  event              Event                  @relation(fields: [eventId], references: [id])
-  routeId            String?
-  route              Route?                 @relation(fields: [routeId], references: [id])
-  pickupPointId      String?
-  pickupPoint        PickupPoint?           @relation(fields: [pickupPointId], references: [id])
-  customerId         String
-  customer           Customer               @relation(fields: [customerId], references: [id])
-  discountId         String?
-  discount           Discount?              @relation(fields: [discountId], references: [id])
-  status             ReservationStatus      @default(HELD)
-  plan               CommercialPlan?
-  pickupPreference   String?
-  pickupOther        String?
-  contactStatus      CommercialContactStatus @default(TO_CONTACT)
-  operationalConfirmed Boolean              @default(false)
-  quantity           Int
-  unitPrice          Decimal                @db.Decimal(12, 2)
-  discountAmount     Decimal                @default(0) @db.Decimal(12, 2)
-  totalAmount        Decimal                @db.Decimal(12, 2)
-  currency           String                 @default("AOA")
-  holdExpiresAt      DateTime?
-  paidAt             DateTime?
-  idempotencyKey     String                 @unique
-  termsAcceptedAt    DateTime?
-  campaignSource     String?
-  utmSource          String?
-  utmMedium          String?
-  utmCampaign        String?
-  utmContent         String?
-  utmTerm            String?
-  referralInput      String?
-  passengers         ReservationPassenger[]
-  seatPreferences    SeatPreference[]
-  contactActivities  ContactActivity[]
-  payments           Payment[]
-  referralRedemption ReferralRedemption?
-  crmJobs            CRMIntegrationJob[]
-  notifications      Notification[]
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  id                   String                  @id @default(cuid())
+  reference            String                  @unique
+  eventId              String
+  event                Event                   @relation(fields: [eventId], references: [id])
+  routeId              String?
+  route                Route?                  @relation(fields: [routeId], references: [id])
+  pickupPointId        String?
+  pickupPoint          PickupPoint?            @relation(fields: [pickupPointId], references: [id])
+  customerId           String
+  customer             Customer                @relation(fields: [customerId], references: [id])
+  discountId           String?
+  discount             Discount?               @relation(fields: [discountId], references: [id])
+  status               ReservationStatus       @default(HELD)
+  plan                 CommercialPlan?
+  pickupPreference     String?
+  pickupOther          String?
+  contactStatus        CommercialContactStatus @default(TO_CONTACT)
+  operationalConfirmed Boolean                 @default(false)
+  quantity             Int
+  unitPrice            Decimal                 @db.Decimal(12, 2)
+  discountAmount       Decimal                 @default(0) @db.Decimal(12, 2)
+  totalAmount          Decimal                 @db.Decimal(12, 2)
+  currency             String                  @default("AOA")
+  holdExpiresAt        DateTime?
+  paidAt               DateTime?
+  idempotencyKey       String                  @unique
+  termsAcceptedAt      DateTime?
+  campaignSource       String?
+  utmSource            String?
+  utmMedium            String?
+  utmCampaign          String?
+  utmContent           String?
+  utmTerm              String?
+  referralInput        String?
+  passengers           ReservationPassenger[]
+  seatPreferences      SeatPreference[]
+  contactActivities    ContactActivity[]
+  payments             Payment[]
+  referralRedemption   ReferralRedemption?
+  crmJobs              CRMIntegrationJob[]
+  notifications        Notification[]
+  paymentInvitation    PaymentInvitation?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 
   @@index([eventId, status])
   @@index([holdExpiresAt, status])
@@ -257,6 +259,23 @@ model Payment {
   webhookEvents     PaymentWebhookEvent[]
 
   @@index([reservationId, status])
+}
+
+model PaymentInvitation {
+  id            String      @id @default(cuid())
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  nonce         String      @default(uuid())
+  expiresAt     DateTime
+  confirmedAt   DateTime?
+  revokedAt     DateTime?
+  createdById   String?
+  createdBy     User?       @relation("PaymentInvitationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([expiresAt])
+  @@index([createdById, createdAt])
 }
 
 model PaymentWebhookEvent {
@@ -393,14 +412,14 @@ model SeatPreference {
 }
 
 model ContactActivity {
-  id            String       @id @default(cuid())
+  id            String                  @id @default(cuid())
   reservationId String
-  reservation   Reservation  @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservation   Reservation             @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   userId        String?
-  user          User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user          User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
   outcome       CommercialContactStatus
   comment       String?
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime                @default(now())
 
   @@index([reservationId, createdAt])
 }

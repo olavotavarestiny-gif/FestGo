@@ -34,4 +34,15 @@ describe("SMS cost estimation", () => {
     expect(result.segments).toBeGreaterThan(1);
     expect(result.isSingleSegment).toBe(false);
   });
+
+  it("prices the exact manual payment invitation after real substitutions", () => {
+    const content = smsTemplates.paymentInvitation(
+      "https://festgo.mazanga.digital/confirmar/token-seguro",
+      "FGP-2026-ABC123",
+    );
+    expect(content).toContain("FestGo 💜 A tua pré-reserva está pronta para pagamento!");
+    const result = analyzeSms(content);
+    expect(result.encoding).toBe("UCS-2");
+    expect(result.segments).toBeGreaterThan(1);
+  });
 });

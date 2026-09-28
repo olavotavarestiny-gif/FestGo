@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Mail, MapPin, Phone, Users } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { PreReservationAdminActions } from "@/components/pre-reservation-admin-actions";
+import { PaymentInvitationAdminActions } from "@/components/payment-invitation-admin-actions";
 import { planLabels, reservationStatusLabels } from "@/lib/admin-reservations";
 import { requireStaff } from "@/lib/auth";
 import { formatKz } from "@/lib/data";
 import { prisma } from "@/lib/db";
 import { analyzeSms, smsTemplates } from "@/lib/sms";
+import { invitationState, paymentInvitationLink } from "@/lib/payment-invitations";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +35,7 @@ export default async function ReservationPage({
 }) {
   await requireStaff("ADMIN");
   const { id } = await params;
-  const [reservation, auditLogs] = await Promise.all([
-    prisma.reservation.findUnique({
+  const reservation = await prisma.reservation.findUnique({
       where: { id },
       include: {
         customer: true,
@@ -52,15 +53,22 @@ export default async function ReservationPage({
           include: { requestedBy: { select: { name: true } } },
           orderBy: { createdAt: "desc" },
         },
+        paymentInvitation: true,
       },
-    }),
-    prisma.auditLog.findMany({
-      where: { entityType: "Reservation", entityId: id },
+    });
+  if (!reservation) notFound();
+  const auditLogs = await prisma.auditLog.findMany({
+      where: {
+        OR: [
+          { entityType: "Reservation", entityId: id },
+          ...(reservation.paymentInvitation
+            ? [{ entityType: "PaymentInvitation", entityId: reservation.paymentInvitation.id }]
+            : []),
+        ],
+      },
       include: { user: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
-    }),
-  ]);
-  if (!reservation) notFound();
+    });
 
   const approvalContent = smsTemplates.preReservationApproved(reservation.reference);
   const approvalAnalysis = analyzeSms(approvalContent);
@@ -70,6 +78,19 @@ export default async function ReservationPage({
   const registrationSms = reservation.notifications.find(
     (notification) => notification.template === "PRE_RESERVATION_RECEIVED",
   );
+  const paymentLinkSms = reservation.notifications.find(
+    (notification) => notification.template === "PAYMENT_LINK",
+  );
+  const paymentInvitation = reservation.paymentInvitation;
+  const paymentLink = paymentInvitation && !paymentInvitation.revokedAt
+    ? paymentInvitationLink(paymentInvitation)
+    : null;
+  const paymentSmsContent = paymentLink
+    ? smsTemplates.paymentInvitation(paymentLink, reservation.reference)
+    : null;
+  const paymentSmsAnalysis = paymentSmsContent
+    ? analyzeSms(paymentSmsContent)
+    : null;
 
   return (
     <main className="min-h-screen bg-[#100e17] p-4 text-white sm:p-6">
@@ -147,6 +168,31 @@ export default async function ReservationPage({
                   isSingleSegment: approvalAnalysis.isSingleSegment && approvalAnalysis.encoding === "GSM-7",
                 }}
               />
+              <div className="mt-5">
+                <PaymentInvitationAdminActions
+                  reservationId={reservation.id}
+                  reservationStatus={reservation.status}
+                  invitation={paymentInvitation ? {
+                    state: invitationState(paymentInvitation),
+                    link: paymentLink,
+                    expiresAt: paymentInvitation.expiresAt.toISOString(),
+                    confirmedAt: paymentInvitation.confirmedAt?.toISOString() ?? null,
+                  } : null}
+                  sms={paymentLinkSms ? {
+                    status: paymentLinkSms.status,
+                    attempts: paymentLinkSms.attempts,
+                    providerStatus: paymentLinkSms.providerStatus,
+                    sentAt: paymentLinkSms.sentAt?.toISOString() ?? null,
+                    lastError: paymentLinkSms.lastError,
+                  } : null}
+                  preview={paymentSmsContent && paymentSmsAnalysis ? {
+                    content: paymentSmsContent,
+                    characterCount: paymentSmsAnalysis.characterCount,
+                    encoding: paymentSmsAnalysis.encoding,
+                    segments: paymentSmsAnalysis.segments,
+                  } : null}
+                />
+              </div>
             </div>
           </aside>
         </div>

@@ -1,7 +1,7 @@
 # FestGO — Progresso
 
 Última actualização: 28 de Setembro de 2026  
-Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custos SMS**
+Fase concluída neste ciclo: **Fase 3 — convites individuais de pagamento**
 
 ## Funcionalidades concluídas
 
@@ -27,6 +27,15 @@ Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custo
 - Bloqueio de mensagens automáticas fora de GSM-7 ou acima de um segmento; nenhuma divisão silenciosa.
 - Três tentativas máximas, recuperação de processamento interrompido, idempotência Ziett e unicidade na PostgreSQL.
 - Identificador e estado devolvidos pela Ziett, conteúdo final, segmentos, falhas, administrador e datas guardados no histórico.
+- Convite individual gerado manualmente apenas para pré-reservas aprovadas, sem criar uma cobrança.
+- Link oficial assinado, imprevisível, sem dados pessoais, com validade configurável, revogação e renovação controlada.
+- Estado do convite visível no painel: activo, dados confirmados, expirado ou revogado.
+- Página personalizada FestGo com evento, referência, plano, preço, passageiros, lugares e recolha previamente escolhidos.
+- Alteração do plano para Individual, Dupla ou Grupo, com preço e quantidade sempre recalculados no servidor.
+- Actualização transaccional de passageiros, lugares e recolha, incluindo verificação concorrente da disponibilidade.
+- Histórico auditável das alterações feitas através do convite, sem atribuir essas alterações a um administrador.
+- Envio manual do link pela Ziett com texto final, referência real, aviso de custo UCS-2 e confirmação explícita de múltiplos segmentos.
+- Cobranças reais continuam desactivadas; o novo fluxo não chama a API de pagamentos do Supabase.
 
 ## Ficheiros modificados
 
@@ -36,6 +45,7 @@ Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custo
 - Configuração operacional: `vercel.json`, `.env.example`, `next.config.ts` e protecções do KukuGest.
 - Testes: autenticação, filtros e fluxos de integração administrativos.
 - Fase 2: `src/lib/sms.ts`, página de reserva, acções administrativas, processador de notificações, integração Ziett e respectivos testes.
+- Fase 3: modelo e API de convites, página `/confirmar/[token]`, formulário personalizado, controlo administrativo, tokens assinados e testes de integração.
 
 ## Migrações aplicadas
 
@@ -43,6 +53,7 @@ Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custo
 - Validada juntamente com todo o histórico de migrações numa PostgreSQL 16 temporária.
 - Produção verificada após publicação na Vercel: quatro migrações reconhecidas e nenhuma migração pendente.
 - `20260928160000_sms_cost_tracking`: adiciona metadados de conteúdo, codificação, caracteres, segmentos, estado Ziett, falha e administrador à notificação. É aditiva e preserva as mensagens existentes.
+- `20260928190000_payment_invitations`: adiciona um convite individual por reserva, com nonce, expiração, confirmação, revogação e administrador criador. É aditiva e não cria pagamentos.
 
 ## Testes realizados
 
@@ -55,6 +66,9 @@ Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custo
 - PostgreSQL 16 temporária: quatro migrações e seed aplicados com sucesso.
 - Fase 2 com `TEST_DATABASE_URL`: 26 testes aprovados, incluindo aprovação, permissões, GSM-7, links longos, falha Ziett, repetição controlada e bloqueio de duplicados.
 - Nenhum SMS real foi enviado pelos testes; as respostas Ziett foram simuladas.
+- Fase 3: 23 testes unitários aprovados sem base externa; 29/29 testes aprovados numa PostgreSQL 16 temporária com as cinco migrações.
+- Cobertos: assinatura e expiração de tokens, acesso inválido, criação idempotente, alteração de plano, passageiros, lugares e recolha, revogação, SMS com aviso de segmentos e ausência de cobranças.
+- `npm run build` aprovado com `/confirmar/[token]`, API pública do convite e API administrativa.
 
 ## Problemas encontrados
 
@@ -66,6 +80,8 @@ Fase concluída neste ciclo: **Fase 2 — aprovação manual e controlo de custo
 - A mensagem de inscrição anterior era longa, continha emoji e podia consumir vários segmentos UCS-2; substituída pelo template GSM-7 curto.
 - O reenvio anterior permitia voltar a colocar mensagens já enviadas na fila; agora mensagens aceites não podem ser duplicadas.
 - Links extensos podem ultrapassar um segmento. A análise assinala o custo e bloqueia envios automáticos longos até decisão administrativa.
+- O texto de pagamento solicitado contém emoji e acentos, por isso utiliza UCS-2 e vários segmentos. O painel mostra o custo estimado e exige confirmação manual antes do envio.
+- O plano histórico de três pessoas continua visível apenas quando já foi escolhido; novos ajustes oferecem Individual, Dupla e Grupo.
 
 ## Operação de contas administrativas
 
@@ -82,6 +98,7 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 ## Próximas tarefas
 
-- Fase posterior: geração do link de pagamento e envio manual usando o template já preparado.
+- Validar o gateway Supabase integralmente em ambiente de teste depois da confirmação dos dados do convite.
+- Confirmar o método final de pagamento, expiração da cobrança, reconciliação e webhook sem duplicação.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.
-- Manter `PAYMENTS_ENABLED=false` até os fluxos de pagamento serem testados e aprovados.
+- Só depois activar `BOOKING_MODE=PAID_RESERVATION`, `SALES_ENABLED=true` e `PAYMENTS_ENABLED=true` numa abertura controlada.

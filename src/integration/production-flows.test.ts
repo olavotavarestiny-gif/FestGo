@@ -8,6 +8,8 @@ import { POST as createPaymentIntent } from "@/app/api/payments/intent/route";
 import { POST as login } from "@/app/api/auth/login/route";
 import { GET as exportPassengers } from "@/app/api/admin/passengers.csv/route";
 import { PATCH as updatePreReservation } from "@/app/api/admin/pre-reservations/[id]/route";
+import { POST as managePaymentInvitation } from "@/app/api/admin/payment-invitations/[reservationId]/route";
+import { POST as updatePaymentInvitation } from "@/app/api/payment-invitations/[token]/route";
 import {
   GET as inspectTicket,
   POST as validateTicket,
@@ -405,7 +407,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     const cookie = setCookie.split(";")[0];
 
     const reservation = await prisma.reservation.findFirstOrThrow({
-      where: { status: "PRE_RESERVED" },
+      where: { status: "PRE_RESERVED", plan: "DUO_INDIVIDUAL" },
       include: { seatPreferences: true },
     });
     const anonymousSms = await updatePreReservation(
@@ -492,6 +494,130 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect((await sendApproval()).status).toBe(409);
     expect(ziettRequest).toHaveBeenCalledOnce();
 
+    const invitationRequest = (body: Record<string, unknown>, withCookie = true) =>
+      managePaymentInvitation(
+        new Request(
+          `http://localhost/api/admin/payment-invitations/${reservation.id}`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(withCookie ? { cookie } : {}),
+            },
+            body: JSON.stringify(body),
+          },
+        ),
+        { params: Promise.resolve({ reservationId: reservation.id }) },
+      );
+    expect((await invitationRequest({ action: "GENERATE" }, false)).status).toBe(401);
+    const generatedResponse = await invitationRequest({ action: "GENERATE" });
+    expect(generatedResponse.status).toBe(200);
+    const generated = await generatedResponse.json();
+    expect(generated.state).toBe("ACTIVE");
+    expect(generated.link).toMatch(/^https:\/\/festgo\.mazanga\.digital\/confirmar\//);
+    const repeatedGeneration = await invitationRequest({ action: "GENERATE" });
+    expect((await repeatedGeneration.json()).link).toBe(generated.link);
+    expect(await prisma.paymentInvitation.count({
+      where: { reservationId: reservation.id },
+    })).toBe(1);
+
+    const token = decodeURIComponent(new URL(generated.link).pathname.split("/").pop() ?? "");
+    const invalidInvitation = await updatePaymentInvitation(
+      new Request("http://localhost/api/payment-invitations/invalid", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      { params: Promise.resolve({ token: `${token}modified` }) },
+    );
+    expect(invalidInvitation.status).toBe(404);
+
+    const originalSeats = reservation.seatPreferences
+      .map((seat) => seat.seatNumber)
+      .sort((a, b) => a - b)
+      .slice(0, 2);
+    const confirmation = await updatePaymentInvitation(
+      new Request(`http://localhost/api/payment-invitations/${token}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "10.4.0.1",
+        },
+        body: JSON.stringify({
+          plan: "DUO",
+          passengers: ["Passageiro actualizado 1", "Passageiro actualizado 2"],
+          seats: originalSeats,
+          pickupPreference: "OUTRO",
+          pickupOther: "Kilamba",
+        }),
+      }),
+      { params: Promise.resolve({ token }) },
+    );
+    expect(confirmation.status).toBe(200);
+    const changed = await prisma.reservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      include: {
+        passengers: true,
+        seatPreferences: { where: { releasedAt: null } },
+        payments: true,
+      },
+    });
+    expect(changed.plan).toBe("DUO");
+    expect(changed.quantity).toBe(2);
+    expect(Number(changed.totalAmount)).toBe(47_500);
+    expect(changed.passengers).toHaveLength(2);
+    expect(changed.seatPreferences.map((seat) => seat.seatNumber).sort()).toEqual(originalSeats);
+    expect(changed.pickupPreference).toBe("Outro");
+    expect(changed.pickupOther).toBe("Kilamba");
+    expect(changed.payments).toHaveLength(0);
+
+    const paymentSmsWithoutCostConfirmation = await invitationRequest({ action: "SEND_SMS" });
+    expect(paymentSmsWithoutCostConfirmation.status).toBe(409);
+    ziettRequest.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ message_id: "payment-link-message-1", status: "QUEUED" }),
+        { status: 202, headers: { "content-type": "application/json" } },
+      ),
+    );
+    expect((await invitationRequest({
+      action: "SEND_SMS",
+      acknowledgeMultipleSegments: true,
+    })).status).toBe(200);
+    expect((await invitationRequest({
+      action: "SEND_SMS",
+      acknowledgeMultipleSegments: true,
+    })).status).toBe(409);
+    const paymentSms = await prisma.notification.findUniqueOrThrow({
+      where: {
+        reservationId_channel_template: {
+          reservationId: reservation.id,
+          channel: "SMS",
+          template: "PAYMENT_LINK",
+        },
+      },
+    });
+    expect(paymentSms.status).toBe("SENT");
+    expect(paymentSms.content).toContain(generated.link);
+    expect(paymentSms.segmentCount).toBeGreaterThan(1);
+    expect(paymentSms.providerMessageId).toBe("payment-link-message-1");
+
+    expect((await invitationRequest({ action: "REVOKE" })).status).toBe(200);
+    const revokedAccess = await updatePaymentInvitation(
+      new Request(`http://localhost/api/payment-invitations/${token}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          plan: "DUO",
+          passengers: ["Passageiro actualizado 1", "Passageiro actualizado 2"],
+          seats: originalSeats,
+          pickupPreference: "OUTRO",
+          pickupOther: "Kilamba",
+        }),
+      }),
+      { params: Promise.resolve({ token }) },
+    );
+    expect(revokedAccess.status).toBe(404);
+
     const retryReservation = await prisma.reservation.findFirstOrThrow({
       where: { status: "PRE_RESERVED", id: { not: reservation.id } },
     });
@@ -551,7 +677,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect(retriedNotification.status).toBe("SENT");
     expect(retriedNotification.attempts).toBe(2);
     expect(retriedNotification.providerMessageId).toBe("approval-message-2");
-    expect(ziettRequest).toHaveBeenCalledTimes(3);
+    expect(ziettRequest).toHaveBeenCalledTimes(4);
     vi.unstubAllGlobals();
     delete process.env.ZIETT_API_KEY;
     delete process.env.ZIETT_SMS_REMITTER_ID;

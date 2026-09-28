@@ -291,7 +291,18 @@ body { margin: 0; background: #0c0a12; color: #fff; font-family: var(--font-manr
 .sms-cost-ok { background:rgba(16,185,129,.13); color:#6ee7b7; }
 .sms-cost-warning,.sms-warning { color:#fda4af; }
 .sms-warning { margin-top:10px; font-size:11px; line-height:1.5; }
+.admin-link-preview { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
+.invite-admin-meta { display:grid; gap:3px; margin-top:13px; border-radius:11px; background:rgba(255,255,255,.05); padding:11px; }
+.invite-admin-meta small { color:rgba(255,255,255,.4); font-size:9px; }
+.invite-admin-meta b { color:rgba(255,255,255,.8); font-size:11px; }
 .admin-settings { display:grid; gap:11px; }
+
+.invite-shell { display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:38px; padding-block:38px 70px; }
+.invite-heading { margin:26px 0 13px; font-size:17px; font-weight:900; }
+.invite-plan { min-height:155px; opacity:.68; }
+.invite-plan.is-selected { opacity:1; box-shadow:0 0 0 3px rgba(118,34,199,.2),0 14px 30px rgba(118,34,199,.22); }
+.invite-success { display:flex; align-items:center; gap:9px; margin-top:16px; border-radius:12px; background:#eaf8f0; padding:13px; color:#187747; font-size:12px; font-weight:800; }
+@media(max-width:800px) { .invite-shell { grid-template-columns:1fr; padding-top:24px; } .invite-shell .pre-aside { grid-row:1; } }
 .admin-settings label { display:grid; gap:6px; color:rgba(255,255,255,.5); font-size:11px; }
 .admin-settings .admin-check { display:flex; grid-auto-flow:column; align-items:center; justify-content:start; }
 .admin-settings small { color:rgba(255,255,255,.45); }

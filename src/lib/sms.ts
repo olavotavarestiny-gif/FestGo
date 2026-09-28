@@ -55,6 +55,9 @@ export const smsTemplates = {
   paymentLink(link: string) {
     return `FestGo: Paga a tua reserva aqui: ${link}`;
   },
+  paymentInvitation(link: string, reference: string) {
+    return `FestGo 💜 A tua pré-reserva está pronta para pagamento! Confirma o teu plano e os teus dados neste link: ${link}. Referência: ${reference}.`;
+  },
   paymentConfirmed(link: string) {
     return `FestGo: Pagamento confirmado! Acede ao teu bilhete: ${link}`;
   },
