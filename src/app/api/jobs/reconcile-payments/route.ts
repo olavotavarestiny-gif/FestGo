@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { reconcilePayment } from "@/lib/integrations/payments-api";
+import { arePaymentsEnabled } from "@/lib/pre-reservations";
 
 async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`)
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  if (!arePaymentsEnabled())
+    return NextResponse.json({ disabled: true, reconciled: 0 });
   const now = new Date();
   const expired = await prisma.reservation.updateMany({
     where: {

@@ -207,6 +207,10 @@ export async function reconcilePayment(localPaymentId: string) {
         data: { status: "PAID", paidAt: new Date() },
       });
       if (transitioned.count) {
+        await tx.seatPreference.updateMany({
+          where: { reservationId: local.reservationId, releasedAt: null },
+          data: { status: "CONFIRMED" },
+        });
         await tx.ticket.createMany({
           data: local.reservation.passengers.map((passenger) => ({
             passengerId: passenger.id,
@@ -229,8 +233,13 @@ export async function reconcilePayment(localPaymentId: string) {
           update: {},
         });
         await tx.cRMIntegrationJob.upsert({
-          where: { reservationId: local.reservationId },
-          create: { reservationId: local.reservationId },
+          where: {
+            reservationId_kind: {
+              reservationId: local.reservationId,
+              kind: "SALE",
+            },
+          },
+          create: { reservationId: local.reservationId, kind: "SALE" },
           update: {},
         });
         await tx.notification.createMany({
@@ -256,6 +265,10 @@ export async function reconcilePayment(localPaymentId: string) {
         },
         data: { status: "REVOKED", revokedAt: new Date() },
       });
+      await tx.seatPreference.updateMany({
+        where: { reservationId: local.reservationId, releasedAt: null },
+        data: { status: "RELEASED", releasedAt: new Date() },
+      });
     } else if (status === "UNKNOWN") {
       await tx.reservation.update({
         where: { id: local.reservationId },
@@ -271,10 +284,18 @@ export async function reconcilePayment(localPaymentId: string) {
         where: { id: local.reservationId },
         data: { status: "EXPIRED" },
       });
+      await tx.seatPreference.updateMany({
+        where: { reservationId: local.reservationId, releasedAt: null },
+        data: { status: "RELEASED", releasedAt: new Date() },
+      });
     } else if (status === "CANCELLED" && local.reservation.status !== "PAID") {
       await tx.reservation.update({
         where: { id: local.reservationId },
         data: { status: "CANCELLED" },
+      });
+      await tx.seatPreference.updateMany({
+        where: { reservationId: local.reservationId, releasedAt: null },
+        data: { status: "RELEASED", releasedAt: new Date() },
       });
     }
   });

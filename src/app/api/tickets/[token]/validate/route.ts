@@ -29,6 +29,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  if (process.env.BOOKING_MODE === "PRE_RESERVATION")
+    return NextResponse.json({ error: "Check-in desactivado." }, { status: 409 });
   const user = await staffFromRequest(request);
   if (!user)
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
@@ -42,7 +44,7 @@ export async function GET(
   return NextResponse.json({
     passenger: ticket.passenger.fullName,
     event: reservation.event.name,
-    pickupPoint: reservation.pickupPoint.name,
+    pickupPoint: reservation.pickupPoint?.name ?? "Por confirmar",
     status: ticket.status,
     reservationStatus: reservation.status,
     used: ticket.validations.map((item) => item.leg),
@@ -53,6 +55,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  if (process.env.BOOKING_MODE === "PRE_RESERVATION")
+    return NextResponse.json({ error: "Check-in desactivado." }, { status: 409 });
   const user = await staffFromRequest(request);
   if (!user)
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });

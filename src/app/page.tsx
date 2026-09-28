@@ -10,6 +10,9 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { event, formatKz } from "@/lib/data";
+import { prisma } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 
 const questions = [
   [
@@ -17,16 +20,30 @@ const questions = [
     "Não. A reserva FestGO cobre apenas o transporte de ida e regresso. O ingresso do Brunch Mangais é comprado à parte.",
   ],
   [
-    "Posso reservar para outras pessoas?",
-    "Sim. Podes reservar até seis lugares. Cada passageiro recebe o seu próprio bilhete digital.",
+    "Posso inscrever três pessoas?",
+    "Sim. Selecciona a combinação Dupla + Individual, com três passageiros e três lugares pretendidos, por 72.500 Kz.",
   ],
   [
-    "Como recebo o bilhete?",
-    "Depois da confirmação do pagamento, o bilhete fica disponível digitalmente com os detalhes de embarque.",
+    "A pré-reserva garante o lugar?",
+    "Ainda não. A equipa confirma a disponibilidade, o pagamento e a operação antes de garantir qualquer lugar ou rota.",
   ],
 ];
 
-export default function Home() {
+export default async function Home() {
+  const configuredEvent = await prisma.event
+    .findUnique({
+      where: { slug: "brunch-mangais" },
+      select: {
+        estimatedTravelDuration: true,
+        travelEstimateConfirmed: true,
+      },
+    })
+    .catch(() => null);
+  const travelDuration =
+    configuredEvent?.travelEstimateConfirmed &&
+    configuredEvent.estimatedTravelDuration
+      ? configuredEvent.estimatedTravelDuration
+      : "a confirmar";
   return (
     <main className="festgo-home">
       <header className="home-header">
@@ -43,7 +60,7 @@ export default function Home() {
             <Link href="#viagem">A viagem</Link>
           </nav>
           <Link href="/reservar" className="home-cta home-cta-small">
-            Reservar lugar <ArrowRight size={16} />
+            Escolher lugar <ArrowRight size={16} />
           </Link>
         </div>
       </header>
@@ -62,7 +79,7 @@ export default function Home() {
           </p>
           <div className="hero-actions">
             <Link href="/reservar" className="home-cta">
-              Reservar o meu lugar <ArrowRight size={18} />
+              Escolher o meu lugar <ArrowRight size={18} />
             </Link>
             <Link href="#brunch" className="text-link">
               Conhecer a viagem <ArrowDownRight size={18} />
@@ -113,13 +130,13 @@ export default function Home() {
           </div>
           <div className="event-facts">
             <div className="fact-price">
-              <span>Transporte por pessoa</span>
+              <span>Planos desde</span>
               <strong>{formatKz(event.price)}</strong>
-              <small>Ida e regresso incluídos</small>
+              <small>Individual, Dupla ou Grupo · ida e volta</small>
               <Link
                 href="/reservar"
                 className="price-arrow"
-                aria-label="Reservar por 25 mil kwanzas"
+                aria-label="Escolher um plano FestGO"
               >
                 <ArrowRight size={20} />
               </Link>
@@ -132,6 +149,10 @@ export default function Home() {
                 <small>Data do brunch</small>
                 <strong>{event.date}</strong>
               </div>
+            </div>
+            <div className="fact-row">
+              <span className="fact-icon"><BusFront size={19} /></span>
+              <div><small>Duração da viagem</small><strong>{travelDuration}</strong></div>
             </div>
             <div className="fact-row">
               <span className="fact-icon">
@@ -170,9 +191,8 @@ export default function Home() {
               </h2>
             </div>
             <p>
-              Três pontos de recolha em Luanda.
-              <br />
-              Um destino: Mangais.
+              Indica a tua preferência. A rota final será definida conforme a
+              procura e a confirmação operacional.
             </p>
           </div>
           <div className="pickup-list">
@@ -183,16 +203,14 @@ export default function Home() {
                   <h3>{point.name}</h3>
                   <p>{point.detail}</p>
                 </div>
-                <div className="stop-time">
-                  <Clock3 size={16} />
-                  <span>{point.time}</span>
-                </div>
+                <div className="stop-time"><span>Preferência</span></div>
                 <MapPin className="stop-pin" size={18} />
               </article>
             ))}
           </div>
           <p className="route-footnote">
-            A hora e o local exactos serão confirmados no teu bilhete digital.
+            A preferência pode ser ajustada pela FestGo. Horários e ponto exacto
+            só serão comunicados após pagamento validado e confirmação da viagem.
           </p>
         </div>
       </section>
@@ -213,17 +231,17 @@ export default function Home() {
               [
                 "01",
                 "Reserva",
-                "Escolhe o ponto de recolha e indica quem vai contigo.",
+                "Escolhe o plano, a recolha pretendida e os lugares que preferes.",
               ],
               [
                 "02",
                 "Confirma",
-                "Verifica o teu número e escolhe o método de pagamento.",
+                "Regista a pré-reserva sem pagamento e recebe uma referência.",
               ],
               [
                 "03",
                 "Embarca",
-                "Apresenta o bilhete digital. Tratamos da ida e do regresso.",
+                "A equipa contacta-te para confirmar disponibilidade e próximos passos.",
               ],
             ].map(([number, title, description]) => (
               <article className="how-step" key={number}>
@@ -246,15 +264,15 @@ export default function Home() {
               nessa?
             </h2>
             <p>
-              Reserva em poucos minutos. Recebes um bilhete individual para cada
-              passageiro.
+              Regista o teu interesse sem pagamento. A inscrição ainda não
+              garante lugar nem confirma a rota.
             </p>
             <Link href="/reservar" className="home-cta">
-              Iniciar reserva <ArrowRight size={18} />
+              Escolher o meu lugar <ArrowRight size={18} />
             </Link>
             <div className="booking-assurance">
               <BusFront size={18} />
-              <span>Ida e volta · Bilhete digital · Apoio FestGO</span>
+              <span>Ida e volta · Sem cobrança agora · Apoio FestGO</span>
             </div>
           </div>
           <div className="faq-list">

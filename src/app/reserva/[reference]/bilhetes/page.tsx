@@ -12,6 +12,7 @@ export default async function TicketsPage({
   params: Promise<{ reference: string }>;
   searchParams: Promise<{ token?: string }>;
 }) {
+  if (process.env.BOOKING_MODE === "PRE_RESERVATION") notFound();
   const { reference } = await params;
   const { token = "" } = await searchParams;
   if (
@@ -39,12 +40,12 @@ export default async function TicketsPage({
         <p className="eyebrow mt-10">Reserva {reservation.reference}</p>
         <h1 className="mt-3 text-4xl font-black">Os teus bilhetes</h1>
         <p className="mt-3 text-white/50">
-          {reservation.pickupPoint.name} ·{" "}
-          {reservation.pickupPoint.departureAt.toLocaleTimeString("pt-AO", {
+          {reservation.pickupPoint?.name ?? "Por confirmar"} ·{" "}
+          {reservation.pickupPoint?.departureAt?.toLocaleTimeString("pt-AO", {
             timeZone: "Africa/Luanda",
             hour: "2-digit",
             minute: "2-digit",
-          })}
+          }) ?? "horário por confirmar"}
         </p>
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           {reservation.passengers.map((passenger) => (

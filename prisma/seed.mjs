@@ -33,13 +33,13 @@ try {
   });
 
   let route = await prisma.route.findFirst({
-    where: { eventId: event.id, name: "Luanda · Talatona · Benfica" },
+    where: { eventId: event.id, name: "Preferências Luanda" },
   });
   if (!route) {
     route = await prisma.route.create({
       data: {
         eventId: event.id,
-        name: "Luanda · Talatona · Benfica",
+        name: "Preferências Luanda",
         capacity: 30,
       },
     });
@@ -52,22 +52,24 @@ try {
 
   const points = [
     {
-      name: "Cidade de Luanda",
-      address: "Marginal — ponto exacto por SMS",
-      at: "2026-11-01T06:30:00.000Z",
+      name: "Cidade — Primeiro de Maio",
+      address: "Preferência; ponto exacto por confirmar",
       sortOrder: 1,
     },
     {
-      name: "Talatona",
-      address: "Belas Shopping — entrada principal",
-      at: "2026-11-01T07:10:00.000Z",
+      name: "Talatona — Belas Shopping",
+      address: "Preferência; ponto exacto por confirmar",
       sortOrder: 2,
     },
     {
-      name: "Benfica",
-      address: "Via Expressa — ponto FestGO",
-      at: "2026-11-01T07:40:00.000Z",
+      name: "11 de Novembro",
+      address: "Preferência; ponto exacto por confirmar",
       sortOrder: 3,
+    },
+    {
+      name: "Benfica — Girafa",
+      address: "Preferência; ponto exacto por confirmar",
+      sortOrder: 4,
     },
   ];
 
@@ -76,14 +78,16 @@ try {
       where: { routeId_name: { routeId: route.id, name: point.name } },
       update: {
         address: point.address,
-        departureAt: new Date(point.at),
+        departureAt: null,
+        operationalConfirmed: false,
         sortOrder: point.sortOrder,
       },
       create: {
         routeId: route.id,
         name: point.name,
         address: point.address,
-        departureAt: new Date(point.at),
+        departureAt: null,
+        operationalConfirmed: false,
         sortOrder: point.sortOrder,
       },
     });

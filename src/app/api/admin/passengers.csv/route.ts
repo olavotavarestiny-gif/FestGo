@@ -4,62 +4,53 @@ import { staffFromRequest } from "@/lib/auth";
 function csv(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
+
 export async function GET(request: Request) {
   const user = await staffFromRequest(request, "ADMIN");
   if (!user) return new Response("Não autorizado.", { status: 401 });
-  const rows = await prisma.reservationPassenger.findMany({
+  const rows = await prisma.reservation.findMany({
     where: {
-      reservation: { event: { slug: "brunch-mangais" }, status: "PAID" },
+      event: { slug: "brunch-mangais" },
+      status: { in: ["LEAD", "PRE_RESERVED", "PAYMENT_PENDING", "WAITLIST", "PAID"] },
     },
     include: {
-      reservation: { include: { customer: true, pickupPoint: true } },
-      ticket: { include: { validations: true } },
+      customer: true,
+      passengers: true,
+      seatPreferences: { where: { releasedAt: null }, orderBy: { seatNumber: "asc" } },
     },
-    orderBy: { fullName: "asc" },
+    orderBy: { createdAt: "desc" },
   });
   const lines = [
-    [
-      "Reserva",
-      "Passageiro",
-      "Comprador",
-      "Telefone",
-      "Embarque",
-      "Bilhete",
-      "Ida",
-      "Volta",
-    ]
-      .map(csv)
-      .join(","),
-    ...rows.map((row) =>
-      [
-        row.reservation.reference,
-        row.fullName,
-        row.reservation.customer.fullName,
-        row.reservation.customer.phone,
-        row.reservation.pickupPoint.name,
-        row.ticket?.status ?? "NÃO EMITIDO",
-        row.ticket?.validations.some((value) => value.leg === "OUTBOUND")
-          ? "SIM"
-          : "NÃO",
-        row.ticket?.validations.some((value) => value.leg === "RETURN")
-          ? "SIM"
-          : "NÃO",
-      ]
-        .map(csv)
-        .join(","),
-    ),
+    ["Referência", "Data", "Estado", "Estado comercial", "Responsável", "Telefone", "Email", "Plano", "Total Kz", "Passageiros", "Recolha pretendida", "Outro local", "Lugares pretendidos", "Origem", "UTM source", "UTM medium", "UTM campaign", "Consentimento promocional"]
+      .map(csv).join(","),
+    ...rows.map((row) => [
+      row.reference,
+      row.createdAt.toISOString(),
+      row.status,
+      row.contactStatus,
+      row.customer.fullName,
+      row.customer.phone,
+      row.customer.email,
+      row.plan,
+      Number(row.totalAmount),
+      row.passengers.map((passenger) => passenger.fullName).join(" | "),
+      row.pickupPreference,
+      row.pickupOther,
+      row.seatPreferences.map((seat) => seat.seatNumber).join(" | "),
+      row.campaignSource,
+      row.utmSource,
+      row.utmMedium,
+      row.utmCampaign,
+      row.customer.marketingConsent ? "SIM" : "NÃO",
+    ].map(csv).join(",")),
   ];
   await prisma.auditLog.create({
-    data: {
-      userId: user.id,
-      action: "PASSENGERS_EXPORTED",
-      entityType: "Event",
-    },
+    data: { userId: user.id, action: "PRE_RESERVATIONS_EXPORTED", entityType: "Event" },
   });
   return new Response(`\uFEFF${lines.join("\n")}`, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": "attachment; filename=festgo-passageiros.csv",
+      "Content-Disposition": "attachment; filename=festgo-pre-reservas.csv",
       "Cache-Control": "no-store",
     },
   });

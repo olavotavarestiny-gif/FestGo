@@ -5,6 +5,7 @@ import { reconcilePayment } from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
+import { arePaymentsEnabled } from "@/lib/pre-reservations";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,11 @@ function providerPaymentId(payload: unknown): string | null {
 }
 
 export async function POST(request: Request) {
+  if (!arePaymentsEnabled())
+    return NextResponse.json(
+      { error: "Webhooks de pagamento desactivados neste modo." },
+      { status: 409 },
+    );
   try {
     await enforceRateLimit({
       namespace: "payment-webhook",

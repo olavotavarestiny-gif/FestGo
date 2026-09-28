@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as createReservation } from "@/app/api/reservations/route";
+import { POST as createPreReservationLead } from "@/app/api/pre-reservations/lead/route";
+import { POST as completePreReservation } from "@/app/api/pre-reservations/route";
+import { POST as createPaymentIntent } from "@/app/api/payments/intent/route";
 import {
   GET as inspectTicket,
   POST as validateTicket,
@@ -18,6 +21,8 @@ const phones = Array.from(
 describe.skipIf(!enabled)("production database flows", () => {
   beforeAll(async () => {
     process.env.SALES_ENABLED = "true";
+    process.env.BOOKING_MODE = "PAID_RESERVATION";
+    process.env.PAYMENTS_ENABLED = "true";
     process.env.AUTH_SECRET = "test-secret-with-at-least-thirty-two-characters";
     const event = await prisma.event.findUniqueOrThrow({
       where: { slug: "brunch-mangais" },
@@ -53,7 +58,7 @@ describe.skipIf(!enabled)("production database flows", () => {
         name: `Comprador ${index}`,
         phone: challenge.phone,
         email: `buyer${index}@example.test`,
-        pickup: "Cidade de Luanda",
+        pickup: "Cidade — Primeiro de Maio",
         passengers: Array.from(
           { length: 6 },
           (_, passenger) => `Passageiro ${index}-${passenger}`,
@@ -100,7 +105,7 @@ describe.skipIf(!enabled)("production database flows", () => {
           name: "Comprador 0",
           phone: firstChallenge.phone,
           email: "buyer0@example.test",
-          pickup: "Cidade de Luanda",
+          pickup: "Cidade — Primeiro de Maio",
           passengers: Array.from(
             { length: 6 },
             (_, passenger) => `Passageiro 0-${passenger}`,
@@ -220,12 +225,12 @@ describe.skipIf(!enabled)("production database flows", () => {
       }),
     ]);
     await prisma.cRMIntegrationJob.upsert({
-      where: { reservationId: reservation.id },
+      where: { reservationId_kind: { reservationId: reservation.id, kind: "SALE" } },
       create: { reservationId: reservation.id },
       update: {},
     });
     await prisma.cRMIntegrationJob.upsert({
-      where: { reservationId: reservation.id },
+      where: { reservationId_kind: { reservationId: reservation.id, kind: "SALE" } },
       create: { reservationId: reservation.id },
       update: {},
     });
@@ -239,5 +244,127 @@ describe.skipIf(!enabled)("production database flows", () => {
         where: { reservationId: reservation.id },
       }),
     ).toBe(1);
+  });
+
+  it("creates every commercial plan at the exact advertised total", async () => {
+    process.env.BOOKING_MODE = "PRE_RESERVATION";
+    process.env.PRE_RESERVATIONS_ENABLED = "true";
+    process.env.PAYMENTS_ENABLED = "false";
+    delete process.env.ZIETT_API_KEY;
+    delete process.env.KUKUGEST_API_KEY;
+    delete process.env.CRON_SECRET;
+    const cases = [
+      ["INDIVIDUAL", 1, 25_000],
+      ["DUO", 2, 47_500],
+      ["DUO_INDIVIDUAL", 3, 72_500],
+      ["GROUP", 4, 90_000],
+    ] as const;
+    let nextSeat = 1;
+    for (const [plan, quantity, total] of cases) {
+      const phone = `+24492400000${quantity}`;
+      const leadResponse = await createPreReservationLead(
+        new Request("http://localhost/api/pre-reservations/lead", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": `10.1.0.${quantity}` },
+          body: JSON.stringify({
+            name: `Responsável ${plan}`,
+            phone,
+            email: `${plan.toLowerCase()}@example.test`,
+            plan,
+            pickupPreference: "TALATONA_BELAS",
+            dataConsent: true,
+            marketingConsent: false,
+            idempotencyKey: randomUUID(),
+          }),
+        }),
+      );
+      expect(leadResponse.status).toBe(201);
+      const lead = await leadResponse.json();
+      const seats = Array.from({ length: quantity }, () => nextSeat++);
+      const completeResponse = await completePreReservation(
+        new Request("http://localhost/api/pre-reservations", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": `10.1.1.${quantity}` },
+          body: JSON.stringify({
+            reservationId: lead.reservationId,
+            accessToken: lead.accessToken,
+            passengers: Array.from({ length: quantity }, (_, index) => `Passageiro ${plan} ${index + 1}`),
+            seats,
+            joinWaitlist: false,
+            terms: true,
+          }),
+        }),
+      );
+      expect(completeResponse.status).toBe(201);
+      const completed = await completeResponse.json();
+      expect(completed.quantity).toBe(quantity);
+      expect(completed.total).toBe(total);
+      expect(completed.seats).toEqual(seats);
+    }
+  });
+
+  it("requires a custom pickup location and resolves simultaneous seat preference safely", async () => {
+    const invalid = await createPreReservationLead(
+      new Request("http://localhost/api/pre-reservations/lead", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "10.2.0.1" },
+        body: JSON.stringify({
+          name: "Responsável Outro",
+          phone: "+244925000001",
+          plan: "INDIVIDUAL",
+          pickupPreference: "OUTRO",
+          pickupOther: "",
+          dataConsent: true,
+          idempotencyKey: randomUUID(),
+        }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+
+    const leads = await Promise.all([1, 2].map(async (suffix) => {
+      const response = await createPreReservationLead(
+        new Request("http://localhost/api/pre-reservations/lead", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": `10.2.0.${suffix + 1}` },
+          body: JSON.stringify({
+            name: `Concorrente ${suffix}`,
+            phone: `+24492600000${suffix}`,
+            plan: "INDIVIDUAL",
+            pickupPreference: "OUTRO",
+            pickupOther: "Kilamba",
+            dataConsent: true,
+            idempotencyKey: randomUUID(),
+          }),
+        }),
+      );
+      expect(response.status).toBe(201);
+      return response.json();
+    }));
+    const attempts = await Promise.all(leads.map((lead, index) =>
+      completePreReservation(
+        new Request("http://localhost/api/pre-reservations", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": `10.2.1.${index + 1}` },
+          body: JSON.stringify({
+            reservationId: lead.reservationId,
+            accessToken: lead.accessToken,
+            passengers: [`Concorrente ${index + 1}`],
+            seats: [30],
+            joinWaitlist: false,
+            terms: true,
+          }),
+        }),
+      ),
+    ));
+    expect(attempts.map((response) => response.status).sort()).toEqual([201, 409]);
+
+    const payment = await createPaymentIntent(
+      new Request("http://localhost/api/payments/intent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(payment.status).toBe(409);
   });
 });

@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function AdminActions({ eventStatus }: { eventStatus: string }) {
+export function AdminActions({
+  eventStatus,
+  preReservationMode = false,
+}: {
+  eventStatus: string;
+  preReservationMode?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +37,7 @@ export function AdminActions({ eventStatus }: { eventStatus: string }) {
       <a href="/api/admin/passengers.csv" className="btn-secondary">
         Exportar passageiros
       </a>
-      {eventStatus === "ON_SALE" ? (
+      {!preReservationMode && (eventStatus === "ON_SALE" ? (
         <button
           disabled={busy}
           onClick={() => setSales("CLOSED")}
@@ -47,10 +53,10 @@ export function AdminActions({ eventStatus }: { eventStatus: string }) {
         >
           Abrir vendas
         </button>
-      )}
-      <a href="/operacoes/check-in" className="btn-secondary">
+      ))}
+      {!preReservationMode && <a href="/operacoes/check-in" className="btn-secondary">
         Check-in
-      </a>
+      </a>}
       <button onClick={logout} className="text-sm text-white/45">
         Sair
       </button>

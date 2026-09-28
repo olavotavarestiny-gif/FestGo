@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { createReservationToken } from "@/lib/reservation-access";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { arePaymentsEnabled } from "@/lib/pre-reservations";
 
 export const runtime = "nodejs";
 
@@ -59,7 +60,7 @@ async function retrySerializable<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 export async function POST(request: Request) {
-  if (process.env.SALES_ENABLED !== "true")
+  if (!arePaymentsEnabled())
     return NextResponse.json(
       { error: "As reservas ainda não estão abertas." },
       { status: 409 },

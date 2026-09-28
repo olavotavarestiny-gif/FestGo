@@ -1,6 +1,19 @@
-# Checklist para abrir vendas
+# Checklist de publicação e abertura de vendas
 
-## Obrigatório
+## Publicar pré-reservas agora
+
+- [ ] `DATABASE_URL` real configurada no deploy; migrações aplicadas após snapshot.
+- [ ] `AUTH_SECRET` e `CRON_SECRET` aleatórios, distintos e com pelo menos 32 caracteres.
+- [ ] `BOOKING_MODE=PRE_RESERVATION`, `PRE_RESERVATIONS_ENABLED=true`, `PAYMENTS_ENABLED=false` e `SALES_ENABLED=false`.
+- [ ] Administrador criado e autenticação, pesquisa, filtros, histórico e CSV testados.
+- [ ] Individual, Dupla, Dupla + Individual e Grupo testados com preços e quantidades exactos.
+- [ ] Os cinco pontos, “Outro” obrigatório, mapa de 30 lugares e concorrência testados.
+- [ ] Página final não mostra pagamento, bilhete, QR, horário, autocarro ou promessa de lugar.
+- [ ] Ziett e KukuGest permanecem opcionais; falhas não impedem a inscrição.
+- [ ] Uma pré-reserva controlada concluída no URL publicado e confirmada na base.
+- [ ] Domínio e HTTPS activos, textos legais e contacto oficial aprovados.
+
+## Obrigatório antes de abrir pagamentos
 
 - [ ] Domínio e HTTPS activos.
 - [ ] PostgreSQL de produção configurado, migrado e com backup/restauro testados.
@@ -20,8 +33,9 @@
 
 ## Abertura controlada
 
-1. Manter o evento em `DRAFT`.
-2. Definir `SALES_ENABLED=true` e redeployar.
-3. Entrar em `/admin` e seleccionar “Abrir vendas”.
-4. Fazer uma reserva controlada e verificar todos os sistemas.
-5. Só então divulgar publicamente o link.
+1. Manter o evento em `DRAFT` e `PAYMENTS_ENABLED=false` até a validação terminar.
+2. Implementar e testar o convite de pagamento, o prazo e o bloqueio/libertação transaccional de lugares.
+3. Definir `BOOKING_MODE=PAID_RESERVATION`, `PAYMENTS_ENABLED=true` e `SALES_ENABLED=true` e redeployar.
+4. Entrar em `/admin` e seleccionar “Abrir vendas”.
+5. Fazer uma compra controlada e verificar todos os sistemas.
+6. Só então divulgar a cobrança publicamente.

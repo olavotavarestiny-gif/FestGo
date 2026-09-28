@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/db";
-import { registerKukuGestSale } from "@/lib/integrations/kukugest";
+import {
+  registerKukuGestSale,
+  upsertKukuGestPreReservation,
+} from "@/lib/integrations/kukugest";
 
 export async function processCRMJobs(
   options: { reservationId?: string; limit?: number } = {},
@@ -23,7 +26,12 @@ export async function processCRMJobs(
     },
     include: {
       reservation: {
-        include: { customer: true, event: true, pickupPoint: true },
+        include: {
+          customer: true,
+          event: true,
+          pickupPoint: true,
+          seatPreferences: { where: { releasedAt: null } },
+        },
       },
     },
     orderBy: { createdAt: "asc" },
@@ -49,20 +57,42 @@ export async function processCRMJobs(
 
     try {
       const reservation = job.reservation;
-      const result = await registerKukuGestSale({
-        reservationId: reservation.id,
-        reference: reservation.reference,
-        eventName: reservation.event.name,
-        amount: Number(reservation.totalAmount),
-        paidAt: reservation.paidAt ?? reservation.updatedAt,
-        pickupPoint: reservation.pickupPoint.name,
-        quantity: reservation.quantity,
-        customer: {
-          name: reservation.customer.fullName,
-          phone: reservation.customer.phone,
-          email: reservation.customer.email,
-        },
-      });
+      const result =
+        job.kind === "PRE_RESERVATION_CONTACT"
+          ? await upsertKukuGestPreReservation({
+              reference: reservation.reference,
+              eventName: reservation.event.name,
+              plan: reservation.plan ?? "Por definir",
+              commercialStatus: reservation.contactStatus,
+              pickupPreference:
+                reservation.pickupOther ||
+                reservation.pickupPreference ||
+                "Por definir",
+              seats: reservation.seatPreferences.map((seat) => seat.seatNumber),
+              customer: {
+                name: reservation.customer.fullName,
+                phone: reservation.customer.phone,
+                email: reservation.customer.email,
+              },
+            })
+          : await registerKukuGestSale({
+              reservationId: reservation.id,
+              reference: reservation.reference,
+              eventName: reservation.event.name,
+              amount: Number(reservation.totalAmount),
+              paidAt: reservation.paidAt ?? reservation.updatedAt,
+              pickupPoint:
+                reservation.pickupPoint?.name ||
+                reservation.pickupOther ||
+                reservation.pickupPreference ||
+                "Por definir",
+              quantity: reservation.quantity,
+              customer: {
+                name: reservation.customer.fullName,
+                phone: reservation.customer.phone,
+                email: reservation.customer.email,
+              },
+            });
       await prisma.$transaction([
         prisma.cRMIntegrationJob.update({
           where: { id: job.id },

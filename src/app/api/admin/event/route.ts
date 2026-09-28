@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { staffFromRequest } from "@/lib/auth";
 import { clientIp } from "@/lib/rate-limit";
+import { arePaymentsEnabled } from "@/lib/pre-reservations";
 
 const schema = z.object({ status: z.enum(["ON_SALE", "CLOSED"]) });
 export async function PATCH(request: Request) {
@@ -13,6 +14,11 @@ export async function PATCH(request: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: "Estado inválido." }, { status: 400 });
   if (parsed.data.status === "ON_SALE") {
+    if (!arePaymentsEnabled())
+      return NextResponse.json(
+        { error: "Os pagamentos estão desactivados no modo de pré-reserva." },
+        { status: 409 },
+      );
     const required = [
       "DATABASE_URL",
       "AUTH_SECRET",

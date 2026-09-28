@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { verifyReservationToken } from "@/lib/reservation-access";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
+import { arePaymentsEnabled } from "@/lib/pre-reservations";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -13,6 +14,11 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!arePaymentsEnabled())
+    return NextResponse.json(
+      { error: "Os pagamentos estão desactivados durante as pré-reservas." },
+      { status: 409 },
+    );
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });

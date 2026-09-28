@@ -3,11 +3,11 @@
 ## Preparação
 
 1. Criar PostgreSQL de produção com backups automáticos e retenção adequada.
-2. Configurar todas as variáveis de `.env.example` na Vercel, começando com `SALES_ENABLED=false`.
+2. Configurar todas as variáveis necessárias na Vercel. Para a fase actual, usar `BOOKING_MODE=PRE_RESERVATION`, `PRE_RESERVATIONS_ENABLED=true`, `PAYMENTS_ENABLED=false` e `SALES_ENABLED=false`.
 3. Executar `npm run db:migrate` contra a base de produção.
 4. Executar `npm run db:seed`; o evento permanecerá em `DRAFT`.
 5. Criar pelo menos um administrador e dois operadores com `npm run user:create`.
-6. Configurar o webhook do fornecedor para `https://festgo.mazanga.digital/api/webhooks/payments` e, quando suportado, enviar `X-Webhook-Secret` ou `X-Signature`.
+6. Manter o webhook de pagamentos desactivado nesta fase. Antes das vendas, configurá-lo para `https://festgo.mazanga.digital/api/webhooks/payments` e, quando suportado, enviar `X-Webhook-Secret` ou `X-Signature`.
 7. Confirmar os Cron Jobs da Vercel e a presença de `CRON_SECRET`. O plano Hobby aceita apenas execução diária; para produção, usar Vercel Pro ou um scheduler externo com frequência de 10 minutos.
 
 ## Backups
@@ -24,7 +24,8 @@
 - SMS em falha: a compra continua válida; consultar `Notification` e repetir pela fila.
 - KukuGest indisponível: a compra e o bilhete continuam válidos; consultar `CRMIntegrationJob`.
 - Chave exposta: revogar no fornecedor, substituir na Vercel e redeployar. Não reutilizar a chave anterior.
-- Vendas de emergência: definir o evento como `CLOSED` no painel; se necessário, definir também `SALES_ENABLED=false` e redeployar.
+- Pré-reservas de emergência: definir `PRE_RESERVATIONS_ENABLED=false` e redeployar.
+- Vendas de emergência: definir o evento como `CLOSED`; definir também `PAYMENTS_ENABLED=false` e `SALES_ENABLED=false` e redeployar.
 
 ## Recuperação
 

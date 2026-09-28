@@ -11,6 +11,12 @@ type KukuGestStatusResponse = {
   scopes: string[];
 };
 
+type KukuGestContactResponse = {
+  success: boolean;
+  contactId: number;
+  existing?: boolean;
+};
+
 export class KukuGestError extends Error {
   constructor(
     message: string,
@@ -96,6 +102,39 @@ export async function registerKukuGestSale(input: {
     }),
   });
   if (!result.success || !result.saleId)
+    throw new KukuGestError("O KukuGest devolveu uma resposta inválida.");
+  return result;
+}
+
+export async function upsertKukuGestPreReservation(input: {
+  reference: string;
+  eventName: string;
+  plan: string;
+  commercialStatus: string;
+  pickupPreference: string;
+  seats: number[];
+  customer: { name: string; phone: string; email?: string | null };
+}) {
+  const result = await request<KukuGestContactResponse>("/contacts", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.customer.name,
+      phone: input.customer.phone,
+      email: input.customer.email || undefined,
+      company: "Consumidor Final",
+      tags: ["FestGO", "Brunch Mangais", "Pré-reserva"],
+      customFields: {
+        origem: "FestGO",
+        evento: input.eventName,
+        referencia: input.reference,
+        plano: input.plan,
+        estadoComercial: input.commercialStatus,
+        recolhaPretendida: input.pickupPreference,
+        lugaresPretendidos: input.seats.join(", "),
+      },
+    }),
+  });
+  if (!result.success || !result.contactId)
     throw new KukuGestError("O KukuGest devolveu uma resposta inválida.");
   return result;
 }

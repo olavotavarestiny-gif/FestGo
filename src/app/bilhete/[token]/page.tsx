@@ -10,6 +10,7 @@ export default async function TicketPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
+  if (process.env.BOOKING_MODE === "PRE_RESERVATION") notFound();
   const { token } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(token)) notFound();
   const ticket = await prisma.ticket.findUnique({
@@ -85,7 +86,7 @@ export default async function TicketPage({
             <div>
               <dt className="text-zinc-500">Embarque</dt>
               <dd className="font-bold">
-                {reservation.pickupPoint.departureAt.toLocaleTimeString(
+                {reservation.pickupPoint?.departureAt?.toLocaleTimeString(
                   "pt-AO",
                   {
                     timeZone: "Africa/Luanda",
@@ -97,7 +98,7 @@ export default async function TicketPage({
             </div>
             <div className="col-span-2">
               <dt className="text-zinc-500">Ponto de recolha</dt>
-              <dd className="font-bold">{reservation.pickupPoint.name}</dd>
+              <dd className="font-bold">{reservation.pickupPoint?.name ?? "Por confirmar"}</dd>
             </div>
             <div className="col-span-2">
               <dt className="text-zinc-500">Regresso</dt>
