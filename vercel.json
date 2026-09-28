@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "prisma migrate deploy && npm run db:seed && npm run build",
+  "buildCommand": "prisma generate && prisma migrate deploy && npm run db:seed && next build",
   "crons": [
     { "path": "/api/jobs/crm", "schedule": "20 3 * * *" },
     { "path": "/api/jobs/notifications", "schedule": "10 3 * * *" },

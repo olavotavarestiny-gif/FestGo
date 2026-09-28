@@ -79,7 +79,7 @@ try {
         sortOrder: point.sortOrder,
       },
       create: {
-        routeId: route.id,
+        route: { connect: { id: route.id } },
         name: point.name,
         address: point.address,
         departureAt: null,
