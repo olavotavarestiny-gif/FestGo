@@ -5,17 +5,19 @@ export function schedulePostPaymentJobs(request: Request) {
   if (!secret) return;
   const headers = { authorization: `Bearer ${secret}` };
   after(async () => {
-    await Promise.allSettled([
+    const jobs = [
       fetch(new URL("/api/jobs/notifications", request.url), {
         method: "POST",
         headers,
         cache: "no-store",
       }),
-      fetch(new URL("/api/jobs/crm", request.url), {
+    ];
+    if (process.env.KUKUGEST_ENABLED === "true")
+      jobs.push(fetch(new URL("/api/jobs/crm", request.url), {
         method: "POST",
         headers,
         cache: "no-store",
-      }),
-    ]);
+      }));
+    await Promise.allSettled(jobs);
   });
 }

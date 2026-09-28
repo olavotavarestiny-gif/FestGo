@@ -13,9 +13,13 @@ export async function currentUser() {
   if (!payload) return null;
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, role: true, active: true },
+    select: { id: true, email: true, name: true, role: true, active: true, sessionVersion: true },
   });
-  if (!user?.active || user.role !== payload.role) return null;
+  if (
+    !user?.active ||
+    user.role !== payload.role ||
+    user.sessionVersion !== payload.sessionVersion
+  ) return null;
   return user;
 }
 
@@ -37,7 +41,11 @@ export async function staffFromRequest(request: Request, role?: "ADMIN") {
   if (!payload || (role && payload.role !== role)) return null;
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, role: true, active: true },
+    select: { id: true, email: true, name: true, role: true, active: true, sessionVersion: true },
   });
-  return user?.active && (!role || user.role === role) ? user : null;
+  return user?.active &&
+    user.sessionVersion === payload.sessionVersion &&
+    (!role || user.role === role)
+    ? user
+    : null;
 }

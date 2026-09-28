@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/db";
 import { staffFromRequest } from "@/lib/auth";
+import {
+  parseAdminReservationFilters,
+  reservationWhere,
+} from "@/lib/admin-reservations";
 
 function csv(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -8,11 +12,16 @@ function csv(value: unknown) {
 export async function GET(request: Request) {
   const user = await staffFromRequest(request, "ADMIN");
   if (!user) return new Response("Não autorizado.", { status: 401 });
+  const query = new URL(request.url).searchParams;
+  const filters = parseAdminReservationFilters({
+    q: query.get("q") ?? undefined,
+    event: query.get("event") ?? undefined,
+    plan: query.get("plan") ?? undefined,
+    pickup: query.get("pickup") ?? undefined,
+    status: query.get("status") ?? undefined,
+  });
   const rows = await prisma.reservation.findMany({
-    where: {
-      event: { slug: "brunch-mangais" },
-      status: { in: ["LEAD", "PRE_RESERVED", "PAYMENT_PENDING", "WAITLIST", "PAID"] },
-    },
+    where: reservationWhere(filters),
     include: {
       customer: true,
       passengers: true,
@@ -45,7 +54,12 @@ export async function GET(request: Request) {
     ].map(csv).join(",")),
   ];
   await prisma.auditLog.create({
-    data: { userId: user.id, action: "PRE_RESERVATIONS_EXPORTED", entityType: "Event" },
+    data: {
+      userId: user.id,
+      action: "PRE_RESERVATIONS_EXPORTED",
+      entityType: "Event",
+      metadata: { filters, rows: rows.length },
+    },
   });
   return new Response(`\uFEFF${lines.join("\n")}`, {
     headers: {

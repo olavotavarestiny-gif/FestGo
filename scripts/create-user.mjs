@@ -18,10 +18,28 @@ const salt = randomBytes(16).toString("base64url");
 const passwordHash = `scrypt$${salt}$${scryptSync(password, salt, 64).toString("base64url")}`;
 const prisma = new PrismaClient();
 try {
-  await prisma.user.upsert({
+  const existing = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
-    update: { name, role, passwordHash, active: true },
+    select: { id: true },
+  });
+  const user = await prisma.user.upsert({
+    where: { email: email.toLowerCase() },
+    update: {
+      name,
+      role,
+      passwordHash,
+      active: true,
+      sessionVersion: { increment: 1 },
+    },
     create: { email: email.toLowerCase(), name, role, passwordHash },
+  });
+  await prisma.auditLog.create({
+    data: {
+      userId: user.id,
+      action: existing ? "STAFF_ACCESS_RECOVERED" : "STAFF_ACCOUNT_CREATED",
+      entityType: "User",
+      entityId: user.id,
+    },
   });
   console.log(`Utilizador ${role} configurado.`);
 } finally {

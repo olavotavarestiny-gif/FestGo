@@ -89,6 +89,7 @@ model User {
   email             String             @unique
   name              String
   passwordHash      String
+  sessionVersion    Int                @default(1)
   role              UserRole           @default(OPERATOR)
   active            Boolean            @default(true)
   createdAt         DateTime           @default(now())

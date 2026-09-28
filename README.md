@@ -18,15 +18,19 @@ npm ci
 cp .env.example .env.local
 npm run db:migrate
 npm run db:seed
-npm run user:create -- admin@exemplo.ao "Administrador" ADMIN
 npm run dev
 ```
 
-Para `user:create`, fornecer a palavra-passe apenas no processo:
+Para criar ou recuperar um utilizador, introduzir a palavra-passe sem a deixar no histórico do terminal:
 
 ```bash
-STAFF_PASSWORD='uma-palavra-passe-longa' npm run user:create -- admin@exemplo.ao "Administrador" ADMIN
+read -s STAFF_PASSWORD
+export STAFF_PASSWORD
+npm run user:create -- admin@exemplo.ao "Administrador" ADMIN
+unset STAFF_PASSWORD
 ```
+
+A recuperação substitui o hash e invalida as sessões anteriores da conta.
 
 ## Verificação
 
@@ -46,7 +50,8 @@ Os testes de integração PostgreSQL são activados com `TEST_DATABASE_URL`. Nun
 - Administração: `/admin`
 - Check-in: `/operacoes/check-in`
 - Webhook: `/api/webhooks/payments`
-- Tarefas: `/api/jobs/reconcile-payments`, `/api/jobs/notifications`, `/api/jobs/crm`
+- Tarefas activas: `/api/jobs/reconcile-payments`, `/api/jobs/notifications`
+- KukuGest: código histórico preservado em `/api/jobs/crm`, desactivado salvo quando `KUKUGEST_ENABLED=true`
 
 As tarefas são protegidas por `CRON_SECRET`. Na Vercel, os agendamentos estão definidos em `vercel.json`.
 

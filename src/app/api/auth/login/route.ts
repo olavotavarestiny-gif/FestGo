@@ -12,31 +12,50 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const body = await request.json().catch(() => null);
+  const parsed = schema.safeParse(body);
+  const emailKey = parsed.success
+    ? parsed.data.email.toLowerCase()
+    : "invalid-email";
   try {
-    await enforceRateLimit({
-      namespace: "staff-login",
-      identifier: clientIp(request),
-      limit: 8,
-      windowMs: 15 * 60_000,
-    });
+    await Promise.all([
+      enforceRateLimit({
+        namespace: "staff-login-ip",
+        identifier: clientIp(request),
+        limit: 8,
+        windowMs: 15 * 60_000,
+      }),
+      enforceRateLimit({
+        namespace: "staff-login-account",
+        identifier: emailKey,
+        limit: 8,
+        windowMs: 15 * 60_000,
+      }),
+    ]);
   } catch {
     return NextResponse.json(
       { error: "Demasiadas tentativas. Aguarda 15 minutos." },
       { status: 429 },
     );
   }
-  const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json(
       { error: "Credenciais inválidas." },
       { status: 401 },
     );
+  return authenticate(request, parsed.data);
+}
+
+async function authenticate(
+  request: Request,
+  credentials: z.infer<typeof schema>,
+) {
   const user = await prisma.user.findUnique({
-    where: { email: parsed.data.email.toLowerCase() },
+    where: { email: credentials.email.toLowerCase() },
   });
   if (
     !user?.active ||
-    !verifyPassword(parsed.data.password, user.passwordHash)
+    !verifyPassword(credentials.password, user.passwordHash)
   ) {
     return NextResponse.json(
       { error: "Credenciais inválidas." },
@@ -46,6 +65,7 @@ export async function POST(request: Request) {
   const token = createSessionToken({
     userId: user.id,
     role: user.role,
+    sessionVersion: user.sessionVersion,
     exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
   });
   const response = NextResponse.json({ ok: true, role: user.role });

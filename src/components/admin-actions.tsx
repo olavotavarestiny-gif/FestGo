@@ -6,9 +6,11 @@ import { useState } from "react";
 export function AdminActions({
   eventStatus,
   preReservationMode = false,
+  exportHref = "/api/admin/passengers.csv",
 }: {
   eventStatus: string;
   preReservationMode?: boolean;
+  exportHref?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -34,7 +36,7 @@ export function AdminActions({
   }
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <a href="/api/admin/passengers.csv" className="btn-secondary">
+      <a href={exportHref} className="btn-secondary">
         Exportar passageiros
       </a>
       {!preReservationMode && (eventStatus === "ON_SALE" ? (

@@ -5,11 +5,15 @@ import { POST as createReservation } from "@/app/api/reservations/route";
 import { POST as createPreReservationLead } from "@/app/api/pre-reservations/lead/route";
 import { POST as completePreReservation } from "@/app/api/pre-reservations/route";
 import { POST as createPaymentIntent } from "@/app/api/payments/intent/route";
+import { POST as login } from "@/app/api/auth/login/route";
+import { GET as exportPassengers } from "@/app/api/admin/passengers.csv/route";
+import { PATCH as updatePreReservation } from "@/app/api/admin/pre-reservations/[id]/route";
 import {
   GET as inspectTicket,
   POST as validateTicket,
 } from "@/app/api/tickets/[token]/validate/route";
 import { createSessionToken } from "@/lib/auth-crypto";
+import { hashPassword } from "@/lib/auth-crypto";
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 const prisma = new PrismaClient();
@@ -162,6 +166,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     const session = createSessionToken({
       userId: user.id,
       role: "OPERATOR",
+      sessionVersion: user.sessionVersion,
       exp: Math.floor(Date.now() / 1000) + 60,
     });
     const duplicate = await validateTicket(
@@ -366,5 +371,74 @@ describe.skipIf(!enabled)("production database flows", () => {
       }),
     );
     expect(payment.status).toBe(409);
+  });
+
+  it("protects admin data and approves a pre-reservation atomically", async () => {
+    const anonymousExport = await exportPassengers(
+      new Request("http://localhost/api/admin/passengers.csv"),
+    );
+    expect(anonymousExport.status).toBe(401);
+
+    const password = "palavra-passe-administrativa-segura";
+    const admin = await prisma.user.create({
+      data: {
+        email: `admin-${randomUUID()}@example.test`,
+        name: "Administrador de teste",
+        passwordHash: hashPassword(password),
+        role: "ADMIN",
+      },
+    });
+    const loginResponse = await login(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "10.3.0.1",
+        },
+        body: JSON.stringify({ email: admin.email, password }),
+      }),
+    );
+    expect(loginResponse.status).toBe(200);
+    const setCookie = loginResponse.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=strict");
+    const cookie = setCookie.split(";")[0];
+
+    const reservation = await prisma.reservation.findFirstOrThrow({
+      where: { status: "PRE_RESERVED" },
+      include: { seatPreferences: true },
+    });
+    const response = await updatePreReservation(
+      new Request(
+        `http://localhost/api/admin/pre-reservations/${reservation.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ action: "APPROVE" }),
+        },
+      ),
+      { params: Promise.resolve({ id: reservation.id }) },
+    );
+    expect(response.status).toBe(200);
+    const approved = await prisma.reservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      include: { seatPreferences: true },
+    });
+    expect(approved.status).toBe("PAYMENT_PENDING");
+    expect(approved.contactStatus).toBe("AWAITING_PAYMENT");
+    expect(
+      approved.seatPreferences.every(
+        (seat) => seat.status === "TEMPORARILY_HELD",
+      ),
+    ).toBe(true);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          userId: admin.id,
+          entityId: reservation.id,
+          action: "PRE_RESERVATION_APPROVED",
+        },
+      }),
+    ).toBe(1);
   });
 });

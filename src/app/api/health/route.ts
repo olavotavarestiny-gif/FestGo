@@ -29,7 +29,9 @@ function configuration() {
     cronSecret: configured("CRON_SECRET", 32),
     sms: configured("ZIETT_API_KEY") && configured("ZIETT_SMS_REMITTER_ID"),
     kukugest:
-      configured("KUKUGEST_API_URL") && configured("KUKUGEST_API_KEY"),
+      process.env.KUKUGEST_ENABLED === "true" &&
+      configured("KUKUGEST_API_URL") &&
+      configured("KUKUGEST_API_KEY"),
     payments: {
       endpoint: paymentEndpointValid,
       apiKey: configured("PAYMENTS_API_KEY") || configured("ApiKeyGo"),

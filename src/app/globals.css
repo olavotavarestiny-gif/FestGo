@@ -278,6 +278,7 @@ body { margin: 0; background: #0c0a12; color: #fff; font-family: var(--font-manr
 .admin-followup { display:grid; min-width:260px; grid-template-columns:1fr 1fr; gap:6px; }
 .admin-followup input { grid-column:1/-1; }
 .admin-followup small { grid-column:1/-1; color:rgba(255,255,255,.45); }
+.admin-followup .admin-approve { grid-column:1/-1; min-height:42px; background:#7622c7; font-size:11px; }
 .admin-settings { display:grid; gap:11px; }
 .admin-settings label { display:grid; gap:6px; color:rgba(255,255,255,.5); font-size:11px; }
 .admin-settings .admin-check { display:flex; grid-auto-flow:column; align-items:center; justify-content:start; }

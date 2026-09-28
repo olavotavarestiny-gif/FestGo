@@ -8,6 +8,7 @@ import {
 export type SessionPayload = {
   userId: string;
   role: "ADMIN" | "OPERATOR";
+  sessionVersion: number;
   exp: number;
 };
 
@@ -62,6 +63,8 @@ export function verifySessionToken(token: string): SessionPayload | null {
     if (
       !payload.userId ||
       !["ADMIN", "OPERATOR"].includes(payload.role) ||
+      !Number.isInteger(payload.sessionVersion) ||
+      payload.sessionVersion < 1 ||
       payload.exp <= Math.floor(Date.now() / 1000)
     )
       return null;

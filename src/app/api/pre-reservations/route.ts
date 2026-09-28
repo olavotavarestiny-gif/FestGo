@@ -166,19 +166,21 @@ export async function POST(request: Request) {
               },
             });
           }
-          await tx.cRMIntegrationJob.upsert({
-            where: {
-              reservationId_kind: {
+          if (process.env.KUKUGEST_ENABLED === "true") {
+            await tx.cRMIntegrationJob.upsert({
+              where: {
+                reservationId_kind: {
+                  reservationId: reservation.id,
+                  kind: "PRE_RESERVATION_CONTACT",
+                },
+              },
+              update: { status: "PENDING", nextAttemptAt: new Date() },
+              create: {
                 reservationId: reservation.id,
                 kind: "PRE_RESERVATION_CONTACT",
               },
-            },
-            update: { status: "PENDING", nextAttemptAt: new Date() },
-            create: {
-              reservationId: reservation.id,
-              kind: "PRE_RESERVATION_CONTACT",
-            },
-          });
+            });
+          }
           return tx.reservation.findUniqueOrThrow({
             where: { id: reservation.id },
             include: {

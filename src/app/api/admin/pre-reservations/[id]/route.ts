@@ -10,6 +10,7 @@ const schema = z.discriminatedUnion("action", [
     status: z.enum(["TO_CONTACT", "CONTACTED", "AWAITING_PAYMENT", "NO_RESPONSE"]),
     comment: z.string().trim().max(1000).optional().default(""),
   }),
+  z.object({ action: z.literal("APPROVE") }),
   z.object({ action: z.literal("RESEND_SMS") }),
   z.object({ action: z.literal("RELEASE") }),
 ]);
@@ -59,6 +60,52 @@ export async function PATCH(
       }),
     ]);
     return NextResponse.json({ ok: true });
+  }
+
+  if (parsed.data.action === "APPROVE") {
+    if (reservation.status !== "PRE_RESERVED")
+      return NextResponse.json(
+        { error: "Só é possível aprovar uma pré-reserva por analisar." },
+        { status: 409 },
+      );
+    const approved = await prisma.$transaction(async (tx) => {
+      const updated = await tx.reservation.updateMany({
+        where: { id, status: "PRE_RESERVED" },
+        data: {
+          status: "PAYMENT_PENDING",
+          contactStatus: "AWAITING_PAYMENT",
+        },
+      });
+      if (!updated.count) return false;
+      await tx.seatPreference.updateMany({
+        where: { reservationId: id, releasedAt: null },
+        data: { status: "TEMPORARILY_HELD" },
+      });
+      await tx.contactActivity.create({
+        data: {
+          reservationId: id,
+          userId: user.id,
+          outcome: "AWAITING_PAYMENT",
+          comment: "Pré-reserva aprovada pela equipa FestGO.",
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "PRE_RESERVATION_APPROVED",
+          entityType: "Reservation",
+          entityId: id,
+          ipAddress: clientIp(request),
+        },
+      });
+      return true;
+    });
+    return approved
+      ? NextResponse.json({ ok: true })
+      : NextResponse.json(
+          { error: "A pré-reserva já foi alterada por outro administrador." },
+          { status: 409 },
+        );
   }
 
   if (parsed.data.action === "RELEASE") {

@@ -20,15 +20,26 @@ describe("staff credentials", () => {
     const valid = createSessionToken({
       userId: "user-1",
       role: "ADMIN",
+      sessionVersion: 1,
       exp: Math.floor(Date.now() / 1000) + 60,
     });
     expect(verifySessionToken(valid)?.userId).toBe("user-1");
+    expect(verifySessionToken(valid)?.sessionVersion).toBe(1);
     expect(verifySessionToken(`${valid}x`)).toBeNull();
     const expired = createSessionToken({
       userId: "user-1",
       role: "ADMIN",
+      sessionVersion: 1,
       exp: Math.floor(Date.now() / 1000) - 1,
     });
     expect(verifySessionToken(expired)).toBeNull();
+    const legacyPayload = Buffer.from(
+      JSON.stringify({
+        userId: "user-1",
+        role: "ADMIN",
+        exp: Math.floor(Date.now() / 1000) + 60,
+      }),
+    ).toString("base64url");
+    expect(verifySessionToken(`${legacyPayload}.invalid`)).toBeNull();
   });
 });

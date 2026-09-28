@@ -13,10 +13,12 @@ const options = [
 export function PreReservationAdminActions({
   id,
   current,
+  reservationStatus,
   canResendSms,
 }: {
   id: string;
   current: string;
+  reservationStatus: string;
   canResendSms: boolean;
 }) {
   const router = useRouter();
@@ -51,6 +53,20 @@ export function PreReservationAdminActions({
     if (response.ok) router.refresh();
   }
 
+  async function approve() {
+    if (!window.confirm("Aprovar esta pré-reserva e colocá-la a aguardar pagamento?")) return;
+    setBusy(true); setMessage("");
+    const response = await fetch(`/api/admin/pre-reservations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "APPROVE" }),
+    });
+    const result = await response.json();
+    setBusy(false);
+    setMessage(response.ok ? "Pré-reserva aprovada." : result.error || "Falha ao aprovar.");
+    if (response.ok) router.refresh();
+  }
+
   async function release() {
     if (!window.confirm("Cancelar esta inscrição e libertar os lugares pretendidos?")) return;
     setBusy(true); setMessage("");
@@ -67,13 +83,16 @@ export function PreReservationAdminActions({
 
   return (
     <div className="admin-followup">
-      <select value={status} onChange={(event) => setStatus(event.target.value)}>
-        {options.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-      </select>
-      <input value={comment} maxLength={1000} onChange={(event) => setComment(event.target.value)} placeholder="Comentário da tentativa" />
-      <button disabled={busy} onClick={updateContact}>Guardar</button>
-      {canResendSms && <button disabled={busy} onClick={resendSms}>Reenviar SMS</button>}
-      <button className="admin-danger" disabled={busy} onClick={release}>Cancelar e libertar</button>
+      {reservationStatus === "PRE_RESERVED" && <button className="admin-approve" disabled={busy} onClick={approve}>Aprovar pré-reserva</button>}
+      {["LEAD", "PRE_RESERVED", "PAYMENT_PENDING", "WAITLIST"].includes(reservationStatus) && <>
+        <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          {options.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+        </select>
+        <input value={comment} maxLength={1000} onChange={(event) => setComment(event.target.value)} placeholder="Comentário da tentativa" />
+        <button disabled={busy} onClick={updateContact}>Guardar acompanhamento</button>
+      </>}
+      {canResendSms && ["LEAD", "PRE_RESERVED", "PAYMENT_PENDING", "WAITLIST"].includes(reservationStatus) && <button disabled={busy} onClick={resendSms}>Reenviar SMS</button>}
+      {["LEAD", "PRE_RESERVED", "PAYMENT_PENDING", "WAITLIST"].includes(reservationStatus) && <button className="admin-danger" disabled={busy} onClick={release}>Cancelar e libertar</button>}
       {message && <small>{message}</small>}
     </div>
   );

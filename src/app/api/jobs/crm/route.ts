@@ -8,6 +8,11 @@ export async function POST(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
+  if (process.env.KUKUGEST_ENABLED !== "true")
+    return NextResponse.json(
+      { error: "A sincronização KukuGest está desactivada." },
+      { status: 409 },
+    );
 
   return NextResponse.json(await processCRMJobs());
 }
