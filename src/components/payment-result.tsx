@@ -4,7 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Clock3, RefreshCw, X } from "lucide-react";
 
-type State = { status: string; reservationReference?: string; error?: string };
+type State = {
+  status: string;
+  reservationReference?: string;
+  ticketUrl?: string;
+  error?: string;
+};
 
 export function PaymentResult({
   reservationId,
@@ -37,6 +42,7 @@ export function PaymentResult({
       setState({
         status: result.status,
         reservationReference: result.reservationReference,
+        ticketUrl: result.ticketUrl,
       });
     } catch (error) {
       setState((current) => ({
@@ -55,10 +61,24 @@ export function PaymentResult({
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (
+      cancelled ||
+      !["LOADING", "PENDING", "UNKNOWN", "created", "pending", "processing"].includes(
+        state.status,
+      )
+    )
+      return;
+    const interval = window.setInterval(() => void refresh(), 25_000);
+    return () => window.clearInterval(interval);
+  }, [cancelled, refresh, state.status]);
+
   const paid = state.status === "SUCCEEDED";
   const pending = [
     "LOADING",
+    "CREATED",
     "PENDING",
+    "UNKNOWN",
     "created",
     "pending",
     "processing",
@@ -110,6 +130,13 @@ export function PaymentResult({
             <RefreshCw size={17} className={busy ? "animate-spin" : ""} />
             {busy ? "A consultar…" : "Consultar novamente"}
           </button>
+        )}
+        {paid && state.ticketUrl && (
+          <div>
+            <Link href={state.ticketUrl} className="btn-primary mt-7">
+              Abrir os meus bilhetes
+            </Link>
+          </div>
         )}
         <div>
           <Link href="/" className="btn-secondary mt-5">

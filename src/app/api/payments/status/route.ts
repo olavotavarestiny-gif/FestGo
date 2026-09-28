@@ -6,6 +6,7 @@ import { verifyReservationToken } from "@/lib/reservation-access";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 import { arePaymentsEnabled } from "@/lib/pre-reservations";
+import { createTicketBundleToken } from "@/lib/ticket-access";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
     const reservation = await prisma.reservation.findUnique({
       where: { id: parsed.data.reservationId },
       include: {
+        event: true,
         payments: {
           where: { provider: "paygo" },
           orderBy: { createdAt: "desc" },
@@ -54,7 +56,21 @@ export async function POST(request: Request) {
       );
     const result = await reconcilePayment(payment.id);
     if (result.status === "SUCCEEDED") schedulePostPaymentJobs(request);
-    return NextResponse.json(result);
+    const ticketUrl =
+      result.status === "SUCCEEDED" && reservation
+        ? (() => {
+            const expiry = new Date(
+              (reservation.event.returnAt ?? reservation.event.eventDate).getTime() +
+                7 * 24 * 60 * 60_000,
+            );
+            const token = createTicketBundleToken(
+              reservation.reference,
+              expiry,
+            );
+            return `/reserva/${encodeURIComponent(reservation.reference)}/bilhetes?token=${encodeURIComponent(token)}`;
+          })()
+        : undefined;
+    return NextResponse.json({ ...result, ticketUrl });
   } catch (error) {
     if (
       typeof error === "object" &&

@@ -150,11 +150,10 @@ export function PaymentInvitationForm({
         window.location.assign(paymentUrl);
         return;
       }
-      setSuccess(
-        result.status === "UNKNOWN"
-          ? "A cobrança foi registada e está a ser confirmada. Não repitas o pagamento."
-          : "Pedido enviado ao Multicaixa Express. Confirma no teu telemóvel.",
-      );
+      const statusUrl = new URL("/pagamento", window.location.origin);
+      statusUrl.searchParams.set("reservation", paymentAccess.reservationId);
+      statusUrl.searchParams.set("token", paymentAccess.accessToken);
+      window.location.assign(statusUrl.toString());
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Não foi possível pagar.",
@@ -178,7 +177,7 @@ export function PaymentInvitationForm({
             <h1>Confirma a tua pré-reserva.</h1>
             <p className="pre-intro">
               {eventName}. Confirma o plano, os passageiros, os lugares e a
-              recolha. Nenhum pagamento será iniciado nesta página.
+              recolha. O pagamento só começa quando clicares no botão abaixo.
             </p>
 
             <h2 className="invite-heading">Plano</h2>

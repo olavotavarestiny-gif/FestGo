@@ -87,6 +87,7 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - `src/lib/integrations/payments-api.test.ts`: 8/8 testes relevantes aprovados.
 - `npm run typecheck`, `git diff --check` e `npm run build`: aprovados. Nenhuma chamada real ao gateway e nenhum SMS foram feitos pelos testes automatizados.
 - Correcção automática: 10/10 testes unitários da API de pagamentos e 3/3 fluxos integrados numa PostgreSQL 16 temporária. Cobertos: resposta real em formato de venda, persistência imediata do ID, webhook válido/inválido/duplicado, ausência de webhook, reconciliação por ID, recuperação exacta de ID descartado e emissão única do bilhete.
+- Preparação do lançamento: `git diff --check`, `npm run typecheck`, 12/12 testes focados no gateway e `npm run build` aprovados. Nenhuma cobrança ou SMS real foi efectuado.
 
 ## Problemas encontrados
 
@@ -110,6 +111,9 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - O cron de reconciliação processa pagamentos administrativos isolados mesmo com pagamentos públicos desactivados. Registos antigos sem identificador são recuperados apenas quando existe uma única venda compatível por produto, valor, moeda, método, contacto e janela temporal.
 - Como o plano Vercel Hobby limita crons a uma execução diária, a página administrativa também consulta automaticamente a cada dez segundos enquanto estiver aberta e o teste permanecer pendente. O cron diário continua como recuperação de fundo.
 - Foram adicionados diagnósticos seguros com origem e nomes das chaves da resposta, códigos de falha e eventos de auditoria, sem guardar credenciais ou dados bancários.
+- A Referência Multicaixa foi retirada apenas do checkout oficial; a integração permanece no código para correcção posterior. O Multicaixa Express é agora o único método público aceite.
+- Como o gateway não entregou webhooks nos testes reais observados, a página de estado do pagamento passou a reconciliar automaticamente a cada 25 segundos. Após confirmação fiável, apresenta o acesso assinado aos bilhetes sem criar uma segunda cobrança.
+- Os produtos Individual, Dupla e Grupo são validados no servidor contra o catálogo do gateway antes da abertura do evento e antes de cada cobrança.
 
 ## Operação de contas administrativas
 
@@ -129,4 +133,4 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 - Executar manualmente o novo fluxo integrado de 100 Kz em produção e observar a entrega/autenticação do webhook real.
 - Se o webhook não for aceite, recolher apenas os nomes dos cabeçalhos e o formato de assinatura disponibilizados pelo gateway e ajustar o verificador antes da activação pública.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.
-- Só depois activar `BOOKING_MODE=PAID_RESERVATION`, `SALES_ENABLED=true` e `PAYMENTS_ENABLED=true` numa abertura controlada.
+- Após autorização, manter `BOOKING_MODE=PRE_RESERVATION` e `PRE_RESERVATIONS_ENABLED=true`, activar apenas `SALES_ENABLED=true` e `PAYMENTS_ENABLED=true`, e voltar a publicar a produção.
