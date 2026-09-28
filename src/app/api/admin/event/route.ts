@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { staffFromRequest } from "@/lib/auth";
 import { clientIp } from "@/lib/rate-limit";
 import { arePaymentsEnabled } from "@/lib/pre-reservations";
+import { paymentProductsMatch } from "@/lib/integrations/payments-api";
 
 const schema = z.object({ status: z.enum(["ON_SALE", "CLOSED"]) });
 export async function PATCH(request: Request) {
@@ -39,6 +40,19 @@ export async function PATCH(request: Request) {
     )
       return NextResponse.json(
         { error: "A abertura está bloqueada pela configuração de produção." },
+        { status: 409 },
+      );
+    const officialProductsValid = await paymentProductsMatch([
+      {
+        productId: process.env.PAYMENTS_PRODUCT_INDIVIDUAL_ID,
+        amount: 25_000,
+      },
+      { productId: process.env.PAYMENTS_PRODUCT_DUO_ID, amount: 47_500 },
+      { productId: process.env.PAYMENTS_PRODUCT_GROUP_ID, amount: 90_000 },
+    ]).catch(() => false);
+    if (!officialProductsValid)
+      return NextResponse.json(
+        { error: "Os produtos oficiais não correspondem aos preços FestGo." },
         { status: 409 },
       );
   }

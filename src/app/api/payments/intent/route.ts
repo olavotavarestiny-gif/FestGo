@@ -5,6 +5,8 @@ import {
   createPayment,
   normalizeProductId,
   paymentMethodMatches,
+  paymentPageUrl,
+  paymentProductMatches,
   PaymentsApiError,
   type PaymentsApiMethod,
 } from "@/lib/integrations/payments-api";
@@ -16,7 +18,7 @@ export const runtime = "nodejs";
 const schema = z.object({
   reservationId: z.string().min(8).max(40),
   accessToken: z.string().min(32).max(100),
-  method: z.enum(["multicaixa", "reference"]),
+  method: z.literal("multicaixa"),
 });
 
 function detailsOf(value: Prisma.JsonValue | null) {
@@ -146,6 +148,11 @@ export async function POST(request: Request) {
         },
         { status: 409 },
       );
+    if (!(await paymentProductMatches(productId, total)))
+      return NextResponse.json(
+        { error: "O produto do plano não corresponde ao preço oficial." },
+        { status: 409 },
+      );
 
     payment = await prisma.payment.create({
       data: {
@@ -200,6 +207,7 @@ export async function POST(request: Request) {
         reference: remote.reference?.reference_number ?? null,
         expiresAt: remote.reference?.expiration_date ?? null,
         instructions: remote.instructions ?? remote.message ?? null,
+        paymentUrl: paymentPageUrl(remote),
       };
       await prisma.$transaction([
         prisma.payment.update({

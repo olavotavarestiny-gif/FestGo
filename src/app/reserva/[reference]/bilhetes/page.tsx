@@ -12,7 +12,6 @@ export default async function TicketsPage({
   params: Promise<{ reference: string }>;
   searchParams: Promise<{ token?: string }>;
 }) {
-  if (process.env.BOOKING_MODE === "PRE_RESERVATION") notFound();
   const { reference } = await params;
   const { token = "" } = await searchParams;
   if (

@@ -10,7 +10,6 @@ export default async function TicketPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
-  if (process.env.BOOKING_MODE === "PRE_RESERVATION") notFound();
   const { token } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(token)) notFound();
   const ticket = await prisma.ticket.findUnique({

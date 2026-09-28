@@ -5,6 +5,7 @@ import { PaymentInvitationForm } from "@/components/payment-invitation-form";
 import { prisma } from "@/lib/db";
 import { parsePaymentInvitationToken } from "@/lib/payment-invitations";
 import {
+  arePaymentsEnabled,
   pickupPreferences,
   type CommercialPlanCode,
   type PickupPreferenceCode,
@@ -94,6 +95,7 @@ export default async function PaymentInvitationPage({
         initialPickupOther={reservation.pickupOther ?? ""}
         capacity={reservation.event.capacity}
         unavailableSeats={occupied.map((seat) => seat.seatNumber)}
+        paymentsEnabled={arePaymentsEnabled()}
       />
     </>
   );

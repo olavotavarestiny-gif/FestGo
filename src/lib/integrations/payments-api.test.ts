@@ -5,6 +5,7 @@ import {
   normalizeProductId,
   paymentMethodMatches,
   paymentPageUrl,
+  paymentProductMatches,
 } from "./payments-api";
 
 afterEach(() => {
@@ -100,5 +101,25 @@ describe("payment product configuration", () => {
     expect(normalizeProductId(id)).toBe(id);
     expect(normalizeProductId(`https://payments.example/products/${id}`)).toBe(id);
     expect(normalizeProductId("https://payments.example/products/missing")).toBeUndefined();
+  });
+
+  it("accepts only the configured active product with the server price", async () => {
+    process.env.PAYMENTS_API_KEY = "simulated-key";
+    process.env.PAYMENTS_API_URL =
+      "https://rouxavcvorjiwhpjhsye.supabase.co/functions/v1/api-v1";
+    const id = "d5d5165f-eb43-4aea-b2fd-90ec295430e6";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            products: [{ id, price: 25_000, active: true }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    await expect(paymentProductMatches(id, 25_000)).resolves.toBe(true);
+    await expect(paymentProductMatches(id, 90_000)).resolves.toBe(false);
   });
 });

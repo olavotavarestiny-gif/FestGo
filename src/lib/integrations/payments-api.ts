@@ -58,6 +58,12 @@ export type PaymentsApiSale = {
   paid_at: string | null;
 };
 
+export type PaymentsApiProduct = {
+  id: string;
+  price: number;
+  active: boolean;
+};
+
 export class PaymentsApiError extends Error {
   constructor(
     message: string,
@@ -306,6 +312,54 @@ export async function listPaymentsSales(limit = 100) {
         Number.isFinite(sale.amount) &&
         Boolean(sale.created_at),
     );
+}
+
+export async function paymentProductMatches(
+  productId: string,
+  expectedAmount: number,
+) {
+  if (!/^[0-9a-f-]{36}$/i.test(productId) || !Number.isFinite(expectedAmount))
+    return false;
+  const result = await request<unknown>("/products?limit=100");
+  const root = objectValue(result);
+  const products = Array.isArray(root.products) ? root.products : [];
+  const product = products
+    .map((value) => objectValue(value))
+    .find((value) => stringValue(value.id) === productId);
+  return Boolean(
+    product &&
+      numberValue(product.price, product.amount) === expectedAmount &&
+      product.active !== false &&
+      product.status !== "inactive",
+  );
+}
+
+export async function paymentProductsMatch(
+  expected: Array<{ productId: string | undefined; amount: number }>,
+) {
+  if (
+    expected.some(
+      (item) =>
+        !item.productId || !/^[0-9a-f-]{36}$/i.test(item.productId),
+    )
+  )
+    return false;
+  const result = await request<unknown>("/products?limit=100");
+  const root = objectValue(result);
+  const products = (Array.isArray(root.products) ? root.products : []).map(
+    (value) => objectValue(value),
+  );
+  return expected.every((item) => {
+    const product = products.find(
+      (value) => stringValue(value.id) === item.productId,
+    );
+    return Boolean(
+      product &&
+        numberValue(product.price, product.amount) === item.amount &&
+        product.active !== false &&
+        product.status !== "inactive",
+    );
+  });
 }
 
 export function mapStatus(status: string) {

@@ -23,6 +23,7 @@ export function PaymentInvitationForm({
   initialPickupOther,
   capacity,
   unavailableSeats,
+  paymentsEnabled,
 }: {
   token: string;
   eventName: string;
@@ -34,6 +35,7 @@ export function PaymentInvitationForm({
   initialPickupOther: string;
   capacity: number;
   unavailableSeats: number[];
+  paymentsEnabled: boolean;
 }) {
   const [planCode, setPlanCode] = useState<SelectablePlan>(initialPlan);
   const [passengers, setPassengers] = useState(() =>
@@ -51,6 +53,11 @@ export function PaymentInvitationForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [paymentAccess, setPaymentAccess] = useState<{
+    reservationId: string;
+    accessToken: string;
+  } | null>(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
   const plan = commercialPlans[planCode];
   const planOptions: SelectablePlan[] = initialPlan === "DUO_INDIVIDUAL"
     ? ["DUO_INDIVIDUAL", "INDIVIDUAL", "DUO", "GROUP"]
@@ -66,10 +73,13 @@ export function PaymentInvitationForm({
     setSeats((current) => current.slice(0, next.quantity));
     setError("");
     setSuccess("");
+    setPaymentAccess(null);
   }
 
   function toggleSeat(number: number) {
     if (unavailableSet.has(number)) return;
+    setPaymentAccess(null);
+    setSuccess("");
     setSeats((current) =>
       current.includes(number)
         ? current.filter((seat) => seat !== number)
@@ -105,12 +115,52 @@ export function PaymentInvitationForm({
         throw new Error(result.error ?? "Não foi possível confirmar os dados.");
       }
       setSuccess(result.message);
+      if (result.paymentsEnabled && result.reservationId && result.accessToken)
+        setPaymentAccess({
+          reservationId: result.reservationId,
+          accessToken: result.accessToken,
+        });
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Não foi possível confirmar.",
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function payWithExpress() {
+    if (!paymentAccess) return;
+    setPaymentBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/payments/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...paymentAccess,
+          method: "multicaixa",
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok && response.status !== 202)
+        throw new Error(result.error ?? "Não foi possível iniciar o pagamento.");
+      const paymentUrl = result.details?.paymentUrl;
+      if (typeof paymentUrl === "string" && paymentUrl.startsWith("https://")) {
+        window.location.assign(paymentUrl);
+        return;
+      }
+      setSuccess(
+        result.status === "UNKNOWN"
+          ? "A cobrança foi registada e está a ser confirmada. Não repitas o pagamento."
+          : "Pedido enviado ao Multicaixa Express. Confirma no teu telemóvel.",
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Não foi possível pagar.",
+      );
+    } finally {
+      setPaymentBusy(false);
     }
   }
 
@@ -164,11 +214,15 @@ export function PaymentInvitationForm({
                       maxLength={120}
                       value={passenger}
                       onChange={(event) =>
-                        setPassengers((current) =>
-                          current.map((name, currentIndex) =>
-                            currentIndex === index ? event.target.value : name,
-                          ),
-                        )
+                        {
+                          setPaymentAccess(null);
+                          setSuccess("");
+                          setPassengers((current) =>
+                            current.map((name, currentIndex) =>
+                              currentIndex === index ? event.target.value : name,
+                            ),
+                          );
+                        }
                       }
                     />
                   </label>
@@ -187,7 +241,11 @@ export function PaymentInvitationForm({
                     <input
                       type="radio"
                       checked={pickup === option.code}
-                      onChange={() => setPickup(option.code)}
+                      onChange={() => {
+                        setPaymentAccess(null);
+                        setSuccess("");
+                        setPickup(option.code);
+                      }}
                     />
                     <MapPin size={18} />
                     <span>{option.label}</span>
@@ -202,7 +260,11 @@ export function PaymentInvitationForm({
                     className="pre-field"
                     maxLength={160}
                     value={pickupOther}
-                    onChange={(event) => setPickupOther(event.target.value)}
+                    onChange={(event) => {
+                      setPaymentAccess(null);
+                      setSuccess("");
+                      setPickupOther(event.target.value);
+                    }}
                   />
                 </label>
               )}
@@ -248,6 +310,18 @@ export function PaymentInvitationForm({
             >
               {busy ? "A guardar…" : "Confirmar plano e dados"}
             </button>
+            {paymentAccess && (
+              <button
+                className="home-cta mt-3"
+                type="button"
+                disabled={paymentBusy}
+                onClick={payWithExpress}
+              >
+                {paymentBusy
+                  ? "A iniciar…"
+                  : `Pagar ${formatKz(plan.total)} com Multicaixa Express`}
+              </button>
+            )}
           </div>
         </section>
 
@@ -259,8 +333,9 @@ export function PaymentInvitationForm({
           <p>{plan.quantity} passageiro{plan.quantity === 1 ? "" : "s"} · ida e volta</p>
           <hr />
           <p className="pre-aside-note">
-            Pagamentos reais continuam desactivados. A FestGo enviará as
-            instruções quando esta fase estiver disponível.
+            {paymentsEnabled
+              ? "Pagamento disponível exclusivamente por Multicaixa Express."
+              : "Pagamentos reais continuam desactivados. A FestGo enviará as instruções quando esta fase estiver disponível."}
           </p>
         </aside>
       </div>

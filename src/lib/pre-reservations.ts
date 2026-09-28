@@ -56,7 +56,6 @@ export function isPreReservationMode() {
 
 export function arePaymentsEnabled() {
   return (
-    process.env.BOOKING_MODE === "PAID_RESERVATION" &&
     process.env.SALES_ENABLED === "true" &&
     process.env.PAYMENTS_ENABLED === "true"
   );

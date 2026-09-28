@@ -4,10 +4,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { parsePaymentInvitationToken } from "@/lib/payment-invitations";
 import {
+  arePaymentsEnabled,
   commercialPlans,
   pickupPreferences,
 } from "@/lib/pre-reservations";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { createReservationToken } from "@/lib/reservation-access";
 
 export const runtime = "nodejs";
 
@@ -254,6 +256,7 @@ export async function POST(
             },
           });
           return {
+            reservationId: reservation.id,
             reference: reservation.reference,
             plan: parsed.data.plan,
             quantity: plan.quantity,
@@ -265,12 +268,17 @@ export async function POST(
         { isolationLevel: "Serializable", timeout: 10_000 },
       ),
     );
+    const paymentsEnabled = arePaymentsEnabled();
     return NextResponse.json({
       ok: true,
       ...result,
-      paymentsEnabled: false,
-      message:
-        "Dados confirmados. A FestGo avisará quando o pagamento estiver disponível.",
+      paymentsEnabled,
+      accessToken: paymentsEnabled
+        ? createReservationToken(result.reservationId)
+        : undefined,
+      message: paymentsEnabled
+        ? "Dados confirmados. Podes avançar para o Multicaixa Express."
+        : "Dados confirmados. A FestGo avisará quando o pagamento estiver disponível.",
     });
   } catch (error) {
     if (error instanceof InvitationError)

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isPreReservationMode, arePaymentsEnabled } from "@/lib/pre-reservations";
+import { paymentProductsMatch } from "@/lib/integrations/payments-api";
 
 export const dynamic = "force-dynamic";
 
@@ -50,19 +51,33 @@ function configuration() {
 
 export async function GET() {
   try {
-    await Promise.race([
+    const [, officialProductsValid] = await Promise.all([
+      Promise.race([
       prisma.$queryRaw`SELECT 1`,
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Database timeout")), 3_000),
       ),
+      ]),
+      paymentProductsMatch([
+        {
+          productId: process.env.PAYMENTS_PRODUCT_INDIVIDUAL_ID,
+          amount: 25_000,
+        },
+        { productId: process.env.PAYMENTS_PRODUCT_DUO_ID, amount: 47_500 },
+        { productId: process.env.PAYMENTS_PRODUCT_GROUP_ID, amount: 90_000 },
+      ]).catch(() => false),
     ]);
+    const config = configuration();
     return NextResponse.json(
       {
         status: "ready",
         sales: process.env.SALES_ENABLED === "true" ? "enabled" : "disabled",
         preReservations: isPreReservationMode() ? "enabled" : "disabled",
         payments: arePaymentsEnabled() ? "enabled" : "disabled",
-        configuration: configuration(),
+        configuration: {
+          ...config,
+          payments: { ...config.payments, officialProductsValid },
+        },
       },
       { headers: { "Cache-Control": "no-store" } },
     );
