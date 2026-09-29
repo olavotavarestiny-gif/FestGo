@@ -1,7 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const OFFICIAL_HOST = "https://api.wipay.ao";
-const HOSTED_HOSTNAME = "hosted.wipay.ao";
 
 type Scope = "payment" | "signature";
 type CachedToken = { value: string; expiresAt: number };
@@ -16,6 +15,11 @@ export class WiPayError extends Error {
     super(message);
     this.name = "WiPayError";
   }
+}
+
+function isOfficialHostedHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return normalized === "wipay.ao" || normalized.endsWith(".wipay.ao");
 }
 
 function config() {
@@ -110,7 +114,7 @@ export async function createWiPayPayment(input: {
   if (!location) throw new WiPayError("A WiPay não devolveu o checkout.", undefined, "CHECKOUT_LOCATION_MISSING");
   const checkout = new URL(location);
   const paymentId = checkout.searchParams.get("id");
-  if (checkout.protocol !== "https:" || checkout.hostname !== HOSTED_HOSTNAME)
+  if (checkout.protocol !== "https:" || !isOfficialHostedHostname(checkout.hostname))
     throw new WiPayError("A WiPay devolveu um domínio de checkout inválido.", undefined, "CHECKOUT_HOST_INVALID");
   if (!paymentId || !/^[0-9a-f-]{36}$/i.test(paymentId))
     throw new WiPayError("A WiPay devolveu um identificador inválido.", undefined, "CHECKOUT_ID_INVALID");
