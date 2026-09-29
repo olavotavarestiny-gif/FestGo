@@ -276,6 +276,12 @@ export async function POST(
   } catch (error) {
     const providerError = error instanceof PaymentsApiError ? error : null;
     const wipayError = error instanceof WiPayError ? error : null;
+    const diagnosticCode =
+      providerError?.diagnosticCode ??
+      wipayError?.code ??
+      (error instanceof DOMException && error.name === "TimeoutError"
+        ? "WIPAY_TIMEOUT"
+        : "UNEXPECTED_ERROR");
     const knownFailure =
       (Boolean(providerError?.status) && (providerError?.status ?? 500) < 500) ||
       (Boolean(wipayError?.status) && (wipayError?.status ?? 500) < 500);
@@ -286,8 +292,8 @@ export async function POST(
           status:
             !storedProviderPaymentId && knownFailure ? "FAILED" : "UNKNOWN",
           rawStatus:
-            !storedProviderPaymentId && knownFailure
-              ? `HTTP_${providerError?.status}`
+            !storedProviderPaymentId
+              ? diagnosticCode
               : "UNKNOWN",
         },
       }),
@@ -299,7 +305,7 @@ export async function POST(
           entityId: reservation.id,
           metadata: {
             providerPaymentId: storedProviderPaymentId,
-            diagnosticCode: providerError?.diagnosticCode ?? "UNEXPECTED_ERROR",
+            diagnosticCode,
             providerStatus: providerError?.status ?? wipayError?.status ?? null,
           },
           ipAddress: clientIp(request),
@@ -312,6 +318,7 @@ export async function POST(
           providerError || wipayError
             ? (providerError ?? wipayError)!.message
             : "Não foi possível iniciar o pagamento de teste.",
+        diagnosticCode,
       },
       { status: knownFailure ? 502 : 202 },
     );

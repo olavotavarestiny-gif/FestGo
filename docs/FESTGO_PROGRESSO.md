@@ -145,6 +145,8 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - A documentação WiPay fornecida descreve apenas criação e callback. Não publica endpoint de consulta de transacção, cancelamento, reembolso, prazo do checkout, limites de API nem o valor mínimo exacto.
 - Sem um endpoint oficial de consulta, uma falha definitiva na entrega do callback não pode ser reconciliada automaticamente de forma segura. O sistema mantém o estado pendente e não emite bilhetes por suposição.
 - O arquivo web da documentação foi comparado com a versão oficial consultada e contém os mesmos dois endpoints: `/v1/credentials/token` e `/v1/hosts/payments`.
+- Primeiro teste manual WiPay sandbox: a criação respondeu HTTP 202 antes de guardar qualquer identificador ou URL de checkout. Os logs confirmaram ausência total de chamadas a `/api/webhooks/wipay-test`; as consultas posteriores apenas repetiram o estado local `UNKNOWN`. Portanto, não houve transacção apta a gerar prompt Express ou callback.
+- A integração passou a registar códigos de diagnóstico seguros e específicos para autenticação, HTTP, ausência de `Location`, domínio, ID, nonce e timeout, sem guardar tokens ou credenciais.
 
 ## Operação de contas administrativas
 
