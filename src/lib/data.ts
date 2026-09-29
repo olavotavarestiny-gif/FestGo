@@ -4,7 +4,7 @@ export const event = {
   hours: "10h00 às 20h00",
   location: "Mangais Golf Resort",
   price: 25000,
-  capacity: 30,
+  capacity: 45,
   pickupPoints: [
     {
       name: "Cidade",

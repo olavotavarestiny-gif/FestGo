@@ -14,7 +14,7 @@ try {
       returnAt,
       basePrice: 25000,
       currency: "AOA",
-      capacity: 30,
+      capacity: 45,
       ticketIncludesEntry: false,
     },
     create: {
@@ -25,7 +25,7 @@ try {
       returnAt,
       basePrice: 25000,
       currency: "AOA",
-      capacity: 30,
+      capacity: 45,
       ticketIncludesEntry: false,
       status: "DRAFT",
     },
@@ -39,13 +39,13 @@ try {
       data: {
         eventId: event.id,
         name: "Preferências Luanda",
-        capacity: 30,
+        capacity: 45,
       },
     });
   } else {
     route = await prisma.route.update({
       where: { id: route.id },
-      data: { capacity: 30 },
+      data: { capacity: 45 },
     });
   }
 

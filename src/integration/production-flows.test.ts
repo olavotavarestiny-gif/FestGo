@@ -22,7 +22,7 @@ import { hashPassword } from "@/lib/auth-crypto";
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 const prisma = new PrismaClient();
 const phones = Array.from(
-  { length: 6 },
+  { length: 8 },
   (_, index) => `+24492300000${index + 1}`,
 );
 
@@ -98,7 +98,7 @@ describe.skipIf(!enabled)("production database flows", () => {
       _sum: { quantity: true },
     });
     expect(reserved._sum.quantity).toBeLessThanOrEqual(event.capacity);
-    expect(accepted).toHaveLength(5);
+    expect(accepted).toHaveLength(7);
 
     const first = (await accepted[0].json()) as { reservationId: string };
     const firstChallenge = challenges[0];
@@ -269,7 +269,7 @@ describe.skipIf(!enabled)("production database flows", () => {
         body: JSON.stringify({
           name: "Reserva acima da capacidade",
           phone: "+244924000099",
-          quantity: 31,
+          quantity: 46,
           pickupPreference: "TALATONA_BELAS",
           dataConsent: true,
           idempotencyKey: randomUUID(),
@@ -381,7 +381,7 @@ describe.skipIf(!enabled)("production database flows", () => {
             reservationId: lead.reservationId,
             accessToken: lead.accessToken,
             passengers: [{ fullName: `Concorrente ${index + 1}`, birthDate: "1990-01-01" }],
-            seats: [30],
+            seats: [45],
             joinWaitlist: false,
             terms: true,
           }),

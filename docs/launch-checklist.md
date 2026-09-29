@@ -7,7 +7,7 @@
 - [ ] `BOOKING_MODE=PRE_RESERVATION`, `PRE_RESERVATIONS_ENABLED=true`, `PAYMENTS_ENABLED=false` e `SALES_ENABLED=false`.
 - [ ] Administrador criado e autenticação, pesquisa, filtros, histórico e CSV testados.
 - [ ] Individual, Dupla, Dupla + Individual e Grupo testados com preços e quantidades exactos.
-- [ ] Os cinco pontos, “Outro” obrigatório, mapa de 30 lugares e concorrência testados.
+- [ ] Os cinco pontos, “Outro” obrigatório, mapa de 45 lugares e concorrência testados.
 - [ ] Página final não mostra pagamento, bilhete, QR, horário, autocarro ou promessa de lugar.
 - [ ] Ziett e KukuGest permanecem opcionais; falhas não impedem a inscrição.
 - [ ] Uma pré-reserva controlada concluída no URL publicado e confirmada na base.

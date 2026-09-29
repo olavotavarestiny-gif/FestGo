@@ -47,7 +47,7 @@ Fase concluída neste ciclo: **Operação manual de pagamentos, lugares e contac
 - Bilhete explicitamente identificado como TESTE, com QR exclusivo e leitor administrativo separado do embarque oficial.
 - Validação independente de ida e regresso, recusando automaticamente uma segunda leitura do mesmo trajecto.
 - `PAYMENTS_ENABLED=false` continua a bloquear cobranças públicas; o fluxo de teste não cria clientes, reservas, lugares, pagamentos ou bilhetes oficiais e não envia SMS.
-- Reservas e convites aceitam qualquer quantidade entre 1 e os lugares disponíveis, mantendo os 30 lugares do primeiro autocarro.
+- Reservas e convites aceitam qualquer quantidade entre 1 e os lugares disponíveis, mantendo os 45 lugares do autocarro.
 - O servidor calcula a combinação mais económica de Individual, Dupla e Grupo; os três preços e o limite etário são configuráveis no painel administrativo.
 - Nome e data de nascimento são obrigatórios para novos passageiros. A idade é calculada na data do evento e reservas com menores exigem nome e telefone do adulto responsável.
 - Registos antigos sem nascimento permanecem intactos e precisam de completar os dados no convite antes do pagamento.
@@ -93,6 +93,7 @@ Fase concluída neste ciclo: **Operação manual de pagamentos, lugares e contac
 - `20260929120000_flexible_ticket_quantities`: adiciona preços configuráveis e limite etário ao evento; composição, contagem de menores e responsável à reserva; nascimento, idade e classificação ao passageiro. Todos os novos campos preservam dados antigos.
 - A Fase 2 WiPay não exige nova migração; reutiliza os registos existentes de pagamentos, eventos de webhook, reservas, lugares e bilhetes.
 - Estes ajustes não exigem nova migração; reutilizam `Payment`, `SeatPreference`, `Ticket`, `Notification` e `AuditLog`.
+- `20260929213000_bus_capacity_45`: aumenta de forma não destrutiva a capacidade do evento Brunch Mangais e da rota associada de 30 para 45 lugares.
 
 ## Testes realizados
 
