@@ -148,6 +148,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - Primeiro teste manual WiPay sandbox: a criação respondeu HTTP 202 antes de guardar qualquer identificador ou URL de checkout. Os logs confirmaram ausência total de chamadas a `/api/webhooks/wipay-test`; as consultas posteriores apenas repetiram o estado local `UNKNOWN`. Portanto, não houve transacção apta a gerar prompt Express ou callback.
 - A integração passou a registar códigos de diagnóstico seguros e específicos para autenticação, HTTP, ausência de `Location`, domínio, ID, nonce e timeout, sem guardar tokens ou credenciais.
 - O diagnóstico `CHECKOUT_HOST_INVALID` comprovou que a resposta real usa um subdomínio WiPay diferente do exemplo `hosted.wipay.ao`. A allowlist continua restrita a HTTPS, mas aceita agora o domínio oficial `wipay.ao` e os seus subdomínios, rejeitando qualquer domínio externo ou sufixo enganador.
+- O segundo diagnóstico identificou o hostname real `pay.wiza.ao`. A allowlist passou a aceitar exactamente esse host da Wiza, sem autorizar genericamente outros subdomínios `*.wiza.ao`.
 
 ## Operação de contas administrativas
 

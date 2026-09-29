@@ -128,6 +128,40 @@ describe("WiPay Angola integration", () => {
     ).resolves.toMatchObject({ paymentId });
   });
 
+  it("accepts the live hosted checkout domain returned by WiPay", async () => {
+    const paymentId = randomUUID();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          Response.json({
+            access_token: "payment-token-with-more-than-thirty-two-characters",
+            expires_in: 3600,
+            scope: "payment",
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 303,
+            headers: {
+              location: `https://pay.wiza.ao/?id=${paymentId}&nonce=secure-nonce`,
+            },
+          }),
+        ),
+    );
+    await expect(
+      createWiPayPayment({
+        amount: 100,
+        currency: "AOA",
+        customerPhone: "900000000",
+        referenceId: "festgo_test_reference_wiza",
+        successUrl: "https://festgo.mazanga.digital/pagamento",
+        failureUrl: "https://festgo.mazanga.digital/pagamento?cancelled=1",
+        callbackUrl: "https://festgo.mazanga.digital/api/webhooks/wipay-test",
+      }),
+    ).resolves.toMatchObject({ paymentId });
+  });
+
   it("verifies the documented hex HMAC over the raw callback body", async () => {
     const token = "signature-token-with-more-than-thirty-two-characters";
     vi.stubGlobal(

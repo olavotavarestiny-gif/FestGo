@@ -20,7 +20,11 @@ export class WiPayError extends Error {
 
 function isOfficialHostedHostname(hostname: string) {
   const normalized = hostname.toLowerCase().replace(/\.$/, "");
-  return normalized === "wipay.ao" || normalized.endsWith(".wipay.ao");
+  return (
+    normalized === "wipay.ao" ||
+    normalized.endsWith(".wipay.ao") ||
+    normalized === "pay.wiza.ao"
+  );
 }
 
 function config() {
