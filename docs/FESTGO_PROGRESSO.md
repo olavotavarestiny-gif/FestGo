@@ -1,7 +1,7 @@
 # FestGO — Progresso
 
-Última actualização: 28 de Setembro de 2026  
-Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
+Última actualização: 29 de Setembro de 2026
+Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de crianças**
 
 ## Funcionalidades concluídas
 
@@ -47,6 +47,11 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - Bilhete explicitamente identificado como TESTE, com QR exclusivo e leitor administrativo separado do embarque oficial.
 - Validação independente de ida e regresso, recusando automaticamente uma segunda leitura do mesmo trajecto.
 - `PAYMENTS_ENABLED=false` continua a bloquear cobranças públicas; o fluxo de teste não cria clientes, reservas, lugares, pagamentos ou bilhetes oficiais e não envia SMS.
+- Reservas e convites aceitam qualquer quantidade entre 1 e os lugares disponíveis, mantendo os 30 lugares do primeiro autocarro.
+- O servidor calcula a combinação mais económica de Individual, Dupla e Grupo; os três preços e o limite etário são configuráveis no painel administrativo.
+- Nome e data de nascimento são obrigatórios para novos passageiros. A idade é calculada na data do evento e reservas com menores exigem nome e telefone do adulto responsável.
+- Registos antigos sem nascimento permanecem intactos e precisam de completar os dados no convite antes do pagamento.
+- O painel privado apresenta adultos, menores, idades, responsável, lugares, recolha e valor, com filtro e exportação para reservas com menores.
 
 ## Ficheiros modificados
 
@@ -58,6 +63,7 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - Fase 2: `src/lib/sms.ts`, página de reserva, acções administrativas, processador de notificações, integração Ziett e respectivos testes.
 - Fase 3: modelo e API de convites, página `/confirmar/[token]`, formulário personalizado, controlo administrativo, tokens assinados e testes de integração.
 - Teste integrado: modelos Prisma isolados, APIs administrativas de reserva/pagamento e bilhete, tratamento de webhook, páginas em `/admin/teste-gateway`, componentes do fluxo e teste de integração dedicado.
+- Quantidades flexíveis: `src/lib/pre-reservations.ts`, formulário de reserva, convite personalizado, APIs de pré-reserva/convite, painel, CSV, esquema Prisma e migração aditiva.
 
 ## Migrações aplicadas
 
@@ -67,6 +73,7 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - `20260928160000_sms_cost_tracking`: adiciona metadados de conteúdo, codificação, caracteres, segmentos, estado Ziett, falha e administrador à notificação. É aditiva e preserva as mensagens existentes.
 - `20260928190000_payment_invitations`: adiciona um convite individual por reserva, com nonce, expiração, confirmação, revogação e administrador criador. É aditiva e não cria pagamentos.
 - `20260928210000_integrated_gateway_test`: cria apenas `TestReservation`, `TestPayment`, `TestPaymentWebhookEvent`, `TestTicket` e `TestTicketValidation`. A migração é aditiva e não referencia lugares nem reservas oficiais.
+- `20260929120000_flexible_ticket_quantities`: adiciona preços configuráveis e limite etário ao evento; composição, contagem de menores e responsável à reserva; nascimento, idade e classificação ao passageiro. Todos os novos campos preservam dados antigos.
 
 ## Testes realizados
 
@@ -88,6 +95,8 @@ Fase concluída neste ciclo: **Teste integrado administrativo de 100 Kz**
 - `npm run typecheck`, `git diff --check` e `npm run build`: aprovados. Nenhuma chamada real ao gateway e nenhum SMS foram feitos pelos testes automatizados.
 - Correcção automática: 10/10 testes unitários da API de pagamentos e 3/3 fluxos integrados numa PostgreSQL 16 temporária. Cobertos: resposta real em formato de venda, persistência imediata do ID, webhook válido/inválido/duplicado, ausência de webhook, reconciliação por ID, recuperação exacta de ID descartado e emissão única do bilhete.
 - Preparação do lançamento: `git diff --check`, `npm run typecheck`, 12/12 testes focados no gateway e `npm run build` aprovados. Nenhuma cobrança ou SMS real foi efectuado.
+- Quantidades flexíveis: 39/39 testes sem base e 6/6 fluxos numa PostgreSQL 16 isolada. Cobertos preços de 1 a 8, capacidade, concorrência de lugares, adulto/menor, responsável, alteração pelo convite e preservação do fluxo administrativo.
+- As sete migrações, seed, `npm run typecheck`, `git diff --check` e `npm run build` foram aprovados. Nenhuma cobrança ou SMS real foi efectuado.
 
 ## Problemas encontrados
 
@@ -130,6 +139,7 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 ## Próximas tarefas
 
+- Fase 2: estudar a documentação oficial angolana e integrar a WiPay em sandbox, sem activar pagamentos públicos.
 - Executar manualmente o novo fluxo integrado de 100 Kz em produção e observar a entrega/autenticação do webhook real.
 - Se o webhook não for aceite, recolher apenas os nomes dos cabeçalhos e o formato de assinatura disponibilizados pelo gateway e ajustar o verificador antes da activação pública.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.

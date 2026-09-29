@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     plan: query.get("plan") ?? undefined,
     pickup: query.get("pickup") ?? undefined,
     status: query.get("status") ?? undefined,
+    minors: query.get("minors") ?? undefined,
   });
   const rows = await prisma.reservation.findMany({
     where: reservationWhere(filters),
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "desc" },
   });
   const lines = [
-    ["Referência", "Data", "Estado", "Estado comercial", "Responsável", "Telefone", "Email", "Plano", "Total Kz", "Passageiros", "Recolha pretendida", "Outro local", "Lugares pretendidos", "Origem", "UTM source", "UTM medium", "UTM campaign", "Consentimento promocional"]
+    ["Referência", "Data", "Estado", "Estado comercial", "Responsável", "Telefone", "Email", "Plano", "Total Kz", "Adultos", "Menores", "Passageiros e idades", "Responsável pelos menores", "Telefone do responsável", "Recolha pretendida", "Outro local", "Lugares pretendidos", "Origem", "UTM source", "UTM medium", "UTM campaign", "Consentimento promocional"]
       .map(csv).join(","),
     ...rows.map((row) => [
       row.reference,
@@ -42,7 +43,11 @@ export async function GET(request: Request) {
       row.customer.email,
       row.plan,
       Number(row.totalAmount),
-      row.passengers.map((passenger) => passenger.fullName).join(" | "),
+      row.quantity - row.minorCount,
+      row.minorCount,
+      row.passengers.map((passenger) => `${passenger.fullName}${passenger.ageAtEvent == null ? "" : ` (${passenger.ageAtEvent})`}`).join(" | "),
+      row.minorGuardianName,
+      row.minorGuardianPhone,
       row.pickupPreference,
       row.pickupOther,
       row.seatPreferences.map((seat) => seat.seatNumber).join(" | "),

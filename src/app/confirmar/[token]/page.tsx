@@ -7,7 +7,6 @@ import { parsePaymentInvitationToken } from "@/lib/payment-invitations";
 import {
   arePaymentsEnabled,
   pickupPreferences,
-  type CommercialPlanCode,
   type PickupPreferenceCode,
 } from "@/lib/pre-reservations";
 
@@ -61,8 +60,7 @@ export default async function PaymentInvitationPage({
       Math.floor(parsed.expiresAt.getTime() / 1000) ||
     invitation.revokedAt ||
     invitation.expiresAt <= new Date() ||
-    invitation.reservation.status !== "PAYMENT_PENDING" ||
-    !invitation.reservation.plan
+    invitation.reservation.status !== "PAYMENT_PENDING"
   )
     return unavailable();
 
@@ -88,13 +86,25 @@ export default async function PaymentInvitationPage({
         token={token}
         eventName={reservation.event.name}
         reference={reservation.reference}
-        initialPlan={reservation.plan as CommercialPlanCode}
-        initialPassengers={reservation.passengers.map((passenger) => passenger.fullName)}
+        initialQuantity={reservation.quantity}
+        initialPassengers={reservation.passengers.map((passenger) => ({
+          fullName: passenger.fullName,
+          birthDate: passenger.birthDate?.toISOString().slice(0, 10) ?? "",
+        }))}
         initialSeats={reservation.seatPreferences.map((seat) => seat.seatNumber)}
         initialPickup={(pickup?.code ?? "OUTRO") as PickupPreferenceCode}
         initialPickupOther={reservation.pickupOther ?? ""}
+        initialGuardianName={reservation.minorGuardianName ?? ""}
+        initialGuardianPhone={reservation.minorGuardianPhone ?? ""}
         capacity={reservation.event.capacity}
         unavailableSeats={occupied.map((seat) => seat.seatNumber)}
+        prices={{
+          individual: Number(reservation.event.individualPrice),
+          duo: Number(reservation.event.duoPrice),
+          group: Number(reservation.event.groupPrice),
+        }}
+        eventDate={reservation.event.eventDate.toISOString().slice(0, 10)}
+        minorAgeLimit={reservation.event.minorAgeLimit}
         paymentsEnabled={arePaymentsEnabled()}
       />
     </>

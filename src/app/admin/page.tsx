@@ -42,6 +42,7 @@ export default async function AdminPage({
     plan?: string;
     pickup?: string;
     status?: string;
+    minors?: string;
     page?: string;
   }>;
 }) {
@@ -183,6 +184,7 @@ export default async function AdminPage({
                 <select name="plan" defaultValue={filters.plan ?? ""}><option value="">Todos os planos</option>{Object.entries(planLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
                 <select name="pickup" defaultValue={filters.pickup ?? ""}><option value="">Todos os pontos</option>{pickupLabels.map((label) => <option value={label} key={label}>{label}</option>)}</select>
                 <select name="status" defaultValue={filters.status ?? ""}><option value="">Todos os estados</option>{Object.entries(reservationStatusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+                <select name="minors" defaultValue={filters.minors ? "1" : ""}><option value="">Adultos e menores</option><option value="1">Inclui menores</option></select>
                 <button>Filtrar</button>
               </form>
             </div>
@@ -195,7 +197,7 @@ export default async function AdminPage({
                     <tr className="align-top" key={reservation.id}>
                       <td className="px-5 py-4"><b className="font-mono">{reservation.reference}</b><small className="mt-1 block text-white/35">{reservation.createdAt.toLocaleString("pt-AO", { timeZone: "Africa/Luanda" })}</small></td>
                       <td className="px-5 py-4"><Link className="font-bold text-violet-300 hover:text-violet-200" href={`/admin/clientes/${reservation.customer.id}`}>{reservation.customer.fullName}</Link><small className="mt-1 block text-white/45">{reservation.customer.phone}</small><small className="mt-2 block max-w-[230px] text-white/45">{reservation.passengers.map((passenger) => passenger.fullName).join(" · ") || "Sem passageiros concluídos"}</small></td>
-                      <td className="px-5 py-4">{planLabels[reservation.plan ?? ""] ?? "Por definir"}<small className="mt-1 block text-white/40">{reservation.quantity} pax · {formatKz(Number(reservation.totalAmount))}</small></td>
+                      <td className="px-5 py-4">{planLabels[reservation.plan ?? ""] ?? "Composição automática"}<small className="mt-1 block text-white/40">{reservation.quantity} pax · {reservation.minorCount} menor{reservation.minorCount === 1 ? "" : "es"} · {formatKz(Number(reservation.totalAmount))}</small></td>
                       <td className="px-5 py-4">{reservation.pickupOther || reservation.pickupPreference || "Por definir"}</td>
                       <td className="px-5 py-4">{reservation.seatPreferences.length ? reservation.seatPreferences.map((seat) => seat.seatNumber).join(", ") : reservation.status === "WAITLIST" ? "Espera" : "—"}</td>
                       <td className="px-5 py-4"><StatusBadge status={reservation.status} /><small className="mt-2 block text-white/40">{contactLabels[reservation.contactStatus]}</small></td>
@@ -212,7 +214,7 @@ export default async function AdminPage({
                 <article className="space-y-4 p-5" key={reservation.id}>
                   <div className="flex items-start justify-between gap-3"><div><b className="font-mono text-sm">{reservation.reference}</b><small className="mt-1 block text-white/35">{reservation.createdAt.toLocaleDateString("pt-AO", { timeZone: "Africa/Luanda" })}</small></div><StatusBadge status={reservation.status} /></div>
                   <div><Link className="font-bold text-violet-300" href={`/admin/clientes/${reservation.customer.id}`}>{reservation.customer.fullName}</Link><p className="mt-1 text-xs text-white/45">{reservation.customer.phone}</p><p className="mt-2 text-xs text-white/55">{reservation.passengers.map((passenger) => passenger.fullName).join(" · ") || "Sem passageiros concluídos"}</p></div>
-                  <div className="grid grid-cols-2 gap-3 text-xs"><Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Por definir"} /><Data label="Recolha" value={reservation.pickupOther || reservation.pickupPreference || "Por definir"} /><Data label="Passageiros" value={String(reservation.quantity)} /><Data label="Total" value={formatKz(Number(reservation.totalAmount))} /></div>
+                  <div className="grid grid-cols-2 gap-3 text-xs"><Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Composição automática"} /><Data label="Recolha" value={reservation.pickupOther || reservation.pickupPreference || "Por definir"} /><Data label="Passageiros" value={`${reservation.quantity} (${reservation.minorCount} menores)`} /><Data label="Total" value={formatKz(Number(reservation.totalAmount))} /></div>
                   <Link className="btn-primary w-full" href={`/admin/reservas/${reservation.id}`}>Abrir reserva</Link>
                 </article>
               ))}
@@ -225,7 +227,7 @@ export default async function AdminPage({
           <aside className="space-y-5">
             <Panel title="Planos">{planGroups.map((group) => <Stat key={group.plan ?? "none"} label={planLabels[group.plan ?? ""] ?? "Sem plano"} value={`${group._count} · ${group._sum?.quantity ?? 0} pax`} />)}</Panel>
             <Panel title="Distribuição por recolha">{pickupGroups.map((group, index) => <Stat key={`${group.pickupPreference}-${group.pickupOther}-${index}`} label={group.pickupOther || group.pickupPreference || "Sem preferência"} value={`${group._count} · ${group._sum?.quantity ?? 0} pax`} />)}</Panel>
-            <Panel title="Duração da viagem"><EventPreReservationSettings duration={event?.estimatedTravelDuration ?? ""} confirmed={event?.travelEstimateConfirmed ?? false} /></Panel>
+            <Panel title="Configuração comercial"><EventPreReservationSettings duration={event?.estimatedTravelDuration ?? ""} confirmed={event?.travelEstimateConfirmed ?? false} individualPrice={Number(event?.individualPrice ?? 25_000)} duoPrice={Number(event?.duoPrice ?? 47_500)} groupPrice={Number(event?.groupPrice ?? 90_000)} minorAgeLimit={event?.minorAgeLimit ?? 18} /></Panel>
             <Panel title="Notificações"><Stat label="Falhas de SMS" value={String(smsFailures)} danger={smsFailures > 0} /></Panel>
           </aside>
         </div>

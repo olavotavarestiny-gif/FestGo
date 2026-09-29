@@ -20,8 +20,8 @@ const questions = [
     "Não. A reserva FestGO cobre apenas o transporte de ida e regresso. O ingresso do Brunch Mangais é comprado à parte.",
   ],
   [
-    "Posso inscrever três pessoas?",
-    "Sim. Selecciona a combinação Dupla + Individual, com três passageiros e três lugares pretendidos, por 72.500 Kz.",
+    "Posso escolher qualquer quantidade de bilhetes?",
+    "Sim. Escolhe a quantidade até aos lugares disponíveis. A FestGO aplica automaticamente a combinação mais económica de Individual, Dupla e Grupo.",
   ],
   [
     "A pré-reserva garante o lugar?",

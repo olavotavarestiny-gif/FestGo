@@ -4,8 +4,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { parsePaymentInvitationToken } from "@/lib/payment-invitations";
 import {
+  ageOnDate,
   arePaymentsEnabled,
-  commercialPlans,
+  calculateTicketPricing,
+  legacyPlanForQuantity,
+  normalizeAngolanPhone,
+  parseBirthDate,
   pickupPreferences,
 } from "@/lib/pre-reservations";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
@@ -15,9 +19,14 @@ export const runtime = "nodejs";
 
 const schema = z
   .object({
-    plan: z.enum(["INDIVIDUAL", "DUO", "DUO_INDIVIDUAL", "GROUP"]),
-    passengers: z.array(z.string().trim().min(3).max(120)).min(1).max(4),
-    seats: z.array(z.number().int().min(1).max(30)).min(1).max(4),
+    quantity: z.number().int().min(1).max(100),
+    passengers: z.array(z.object({
+      fullName: z.string().trim().min(3).max(120),
+      birthDate: z.string(),
+    })).min(1).max(100),
+    seats: z.array(z.number().int().min(1).max(100)).min(1).max(100),
+    minorGuardianName: z.string().trim().max(120).optional().default(""),
+    minorGuardianPhone: z.string().trim().max(24).optional().default(""),
     pickupPreference: z.enum([
       "CIDADE_PRIMEIRO_MAIO",
       "TALATONA_BELAS",
@@ -28,18 +37,17 @@ const schema = z
     pickupOther: z.string().trim().max(160).optional().default(""),
   })
   .superRefine((value, context) => {
-    const quantity = commercialPlans[value.plan].quantity;
-    if (value.passengers.length !== quantity)
+    if (value.passengers.length !== value.quantity)
       context.addIssue({
         code: "custom",
         path: ["passengers"],
-        message: `Este plano exige ${quantity} passageiro${quantity === 1 ? "" : "s"}.`,
+        message: `Confirma os dados dos ${value.quantity} passageiros.`,
       });
-    if (value.seats.length !== quantity || new Set(value.seats).size !== quantity)
+    if (value.seats.length !== value.quantity || new Set(value.seats).size !== value.quantity)
       context.addIssue({
         code: "custom",
         path: ["seats"],
-        message: `Escolhe exactamente ${quantity} lugar${quantity === 1 ? "" : "es"}.`,
+        message: `Escolhe exactamente ${value.quantity} lugar${value.quantity === 1 ? "" : "es"}.`,
       });
     if (value.pickupPreference === "OUTRO" && value.pickupOther.length < 3)
       context.addIssue({
@@ -148,23 +156,47 @@ export async function POST(
               "Já existe uma cobrança associada a esta reserva.",
               409,
             );
-          if (
-            parsed.data.plan === "DUO_INDIVIDUAL" &&
-            reservation.plan !== "DUO_INDIVIDUAL"
-          )
-            throw new InvitationError(
-              "Escolhe Individual, Dupla ou Grupo.",
-              400,
-            );
-
           await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${reservation.eventId} FOR UPDATE`;
           const event = await tx.event.findUniqueOrThrow({
             where: { id: reservation.eventId },
-            select: { capacity: true },
+            select: {
+              capacity: true,
+              eventDate: true,
+              minorAgeLimit: true,
+              individualPrice: true,
+              duoPrice: true,
+              groupPrice: true,
+            },
           });
+          if (parsed.data.quantity > event.capacity)
+            throw new InvitationError("A quantidade ultrapassa a capacidade do evento.", 400);
           if (parsed.data.seats.some((seat) => seat > event.capacity))
             throw new InvitationError("Um dos lugares é inválido.", 400);
-          const plan = commercialPlans[parsed.data.plan];
+          const pricing = calculateTicketPricing(parsed.data.quantity, {
+            individual: Number(event.individualPrice),
+            duo: Number(event.duoPrice),
+            group: Number(event.groupPrice),
+          });
+          const plan = legacyPlanForQuantity(parsed.data.quantity);
+          const passengerData = parsed.data.passengers.map((passenger) => {
+            const birthDate = parseBirthDate(passenger.birthDate);
+            if (!birthDate) throw new InvitationError("Indica uma data de nascimento válida para todos os passageiros.", 400);
+            const ageAtEvent = ageOnDate(birthDate, event.eventDate);
+            if (ageAtEvent < 0 || ageAtEvent > 120)
+              throw new InvitationError("Confirma as datas de nascimento dos passageiros.", 400);
+            return {
+              fullName: passenger.fullName,
+              birthDate,
+              ageAtEvent,
+              isMinor: ageAtEvent < event.minorAgeLimit,
+            };
+          });
+          const minorCount = passengerData.filter((passenger) => passenger.isMinor).length;
+          const guardianPhone = parsed.data.minorGuardianPhone
+            ? normalizeAngolanPhone(parsed.data.minorGuardianPhone)
+            : null;
+          if (minorCount && (parsed.data.minorGuardianName.length < 4 || !guardianPhone))
+            throw new InvitationError("Identifica o adulto responsável pelos menores.", 400);
           const pickup = pickupPreferences.find(
             (option) => option.code === parsed.data.pickupPreference,
           );
@@ -191,7 +223,10 @@ export async function POST(
             quantity: reservation.quantity,
             pickupPreference: reservation.pickupPreference,
             pickupOther: reservation.pickupOther,
-            passengers: reservation.passengers.map((passenger) => passenger.fullName),
+            passengers: reservation.passengers.map((passenger) => ({
+              fullName: passenger.fullName,
+              birthDate: passenger.birthDate?.toISOString().slice(0, 10) ?? null,
+            })),
             seats: reservation.seatPreferences.map((seat) => seat.seatNumber),
           };
           await tx.seatPreference.updateMany({
@@ -204,11 +239,16 @@ export async function POST(
           await tx.reservation.update({
             where: { id: reservation.id },
             data: {
-              plan: parsed.data.plan,
-              quantity: plan.quantity,
-              unitPrice: plan.listTotal / plan.quantity,
-              discountAmount: plan.listTotal - plan.total,
-              totalAmount: plan.total,
+              plan,
+              quantity: parsed.data.quantity,
+              unitPrice: pricing.listTotal / parsed.data.quantity,
+              discountAmount: pricing.discount,
+              totalAmount: pricing.total,
+              pricingBreakdown: pricing.composition,
+              minorCount,
+              minorAgeLimit: event.minorAgeLimit,
+              minorGuardianName: minorCount ? parsed.data.minorGuardianName : null,
+              minorGuardianPhone: minorCount ? guardianPhone : null,
               pickupPreference: pickup.label,
               pickupOther:
                 parsed.data.pickupPreference === "OUTRO"
@@ -216,7 +256,7 @@ export async function POST(
                   : null,
               holdExpiresAt: invitation.expiresAt,
               passengers: {
-                create: parsed.data.passengers.map((fullName) => ({ fullName })),
+                create: passengerData,
               },
               seatPreferences: {
                 create: parsed.data.seats.map((seatNumber) => ({
@@ -240,15 +280,20 @@ export async function POST(
                 invitationId: invitation.id,
                 before,
                 after: {
-                  plan: parsed.data.plan,
-                  quantity: plan.quantity,
-                  totalAmount: plan.total,
+                  plan,
+                  quantity: parsed.data.quantity,
+                  totalAmount: pricing.total,
                   pickupPreference: pickup.label,
                   pickupOther:
                     parsed.data.pickupPreference === "OUTRO"
                       ? parsed.data.pickupOther
                       : null,
-                  passengers: parsed.data.passengers,
+                  passengers: passengerData.map((passenger) => ({
+                    fullName: passenger.fullName,
+                    birthDate: passenger.birthDate.toISOString().slice(0, 10),
+                    ageAtEvent: passenger.ageAtEvent,
+                    isMinor: passenger.isMinor,
+                  })),
                   seats: parsed.data.seats,
                 },
               },
@@ -258,9 +303,9 @@ export async function POST(
           return {
             reservationId: reservation.id,
             reference: reservation.reference,
-            plan: parsed.data.plan,
-            quantity: plan.quantity,
-            total: plan.total,
+            plan,
+            quantity: parsed.data.quantity,
+            total: pricing.total,
             seats: parsed.data.seats,
             pickup: parsed.data.pickupOther || pickup.label,
           };

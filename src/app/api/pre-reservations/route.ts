@@ -4,7 +4,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { verifyReservationToken } from "@/lib/reservation-access";
-import { commercialPlans, isPreReservationMode } from "@/lib/pre-reservations";
+import {
+  ageOnDate,
+  isPreReservationMode,
+  normalizeAngolanPhone,
+  parseBirthDate,
+} from "@/lib/pre-reservations";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 
 export const runtime = "nodejs";
@@ -12,8 +17,13 @@ export const runtime = "nodejs";
 const schema = z.object({
   reservationId: z.string().min(8).max(40),
   accessToken: z.string().min(32).max(100),
-  passengers: z.array(z.string().trim().min(3).max(120)).min(1).max(4),
-  seats: z.array(z.number().int().min(1).max(30)).max(4),
+  passengers: z.array(z.object({
+    fullName: z.string().trim().min(3).max(120),
+    birthDate: z.string(),
+  })).min(1).max(100),
+  seats: z.array(z.number().int().min(1).max(100)).max(100),
+  minorGuardianName: z.string().trim().max(120).optional().default(""),
+  minorGuardianPhone: z.string().trim().max(24).optional().default(""),
   joinWaitlist: z.boolean().default(false),
   terms: z.literal(true),
 });
@@ -75,6 +85,7 @@ export async function POST(request: Request) {
             where: { id: input.reservationId },
             include: {
               customer: true,
+              event: true,
               seatPreferences: { where: { releasedAt: null } },
             },
           });
@@ -88,19 +99,46 @@ export async function POST(request: Request) {
               409,
             );
           }
-          if (!reservation.plan)
-            throw new PreReservationError("O plano da inscrição é inválido.", 409);
-          const plan = commercialPlans[reservation.plan];
-          if (input.passengers.length !== plan.quantity)
+          if (input.passengers.length !== reservation.quantity)
             throw new PreReservationError(
-              `O plano ${plan.name} exige ${plan.quantity} passageiro${plan.quantity === 1 ? "" : "s"}.`,
+              `Confirma os dados dos ${reservation.quantity} passageiros.`,
+              400,
+            );
+          if (reservation.quantity > reservation.event.capacity)
+            throw new PreReservationError("A quantidade ultrapassa a capacidade do evento.", 400);
+          if (input.seats.some((seat) => seat > reservation.event.capacity))
+            throw new PreReservationError("Um dos lugares é inválido.", 400);
+          const passengerData = input.passengers.map((passenger) => {
+            const birthDate = parseBirthDate(passenger.birthDate);
+            if (!birthDate)
+              throw new PreReservationError("Indica uma data de nascimento válida para todos os passageiros.", 400);
+            const ageAtEvent = ageOnDate(birthDate, reservation.event.eventDate);
+            if (ageAtEvent < 0 || ageAtEvent > 120)
+              throw new PreReservationError("Confirma as datas de nascimento dos passageiros.", 400);
+            return {
+              fullName: passenger.fullName,
+              birthDate,
+              ageAtEvent,
+              isMinor: ageAtEvent < reservation.event.minorAgeLimit,
+            };
+          });
+          const minorCount = passengerData.filter((passenger) => passenger.isMinor).length;
+          const guardianPhone = input.minorGuardianPhone
+            ? normalizeAngolanPhone(input.minorGuardianPhone)
+            : null;
+          if (
+            minorCount > 0 &&
+            (input.minorGuardianName.length < 4 || !guardianPhone)
+          )
+            throw new PreReservationError(
+              "Identifica o adulto responsável pelos menores.",
               400,
             );
           if (new Set(input.seats).size !== input.seats.length)
             throw new PreReservationError("Escolhe lugares diferentes.", 400);
-          if (!input.joinWaitlist && input.seats.length !== plan.quantity)
+          if (!input.joinWaitlist && input.seats.length !== reservation.quantity)
             throw new PreReservationError(
-              `Escolhe exactamente ${plan.quantity} lugar${plan.quantity === 1 ? "" : "es"}.`,
+              `Escolhe exactamente ${reservation.quantity} lugar${reservation.quantity === 1 ? "" : "es"}.`,
               400,
             );
           if (input.joinWaitlist && input.seats.length)
@@ -136,8 +174,12 @@ export async function POST(request: Request) {
             data: {
               status: input.joinWaitlist ? "WAITLIST" : "PRE_RESERVED",
               termsAcceptedAt: new Date(),
+              minorCount,
+              minorAgeLimit: reservation.event.minorAgeLimit,
+              minorGuardianName: minorCount ? input.minorGuardianName : null,
+              minorGuardianPhone: minorCount ? guardianPhone : null,
               passengers: {
-                create: input.passengers.map((fullName) => ({ fullName })),
+                create: passengerData,
               },
             },
           });

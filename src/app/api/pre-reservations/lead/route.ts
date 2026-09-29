@@ -6,8 +6,9 @@ import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { createReservationToken, verifyReservationToken } from "@/lib/reservation-access";
 import {
-  commercialPlans,
+  calculateTicketPricing,
   isPreReservationMode,
+  legacyPlanForQuantity,
   normalizeAngolanPhone,
   pickupPreferences,
 } from "@/lib/pre-reservations";
@@ -19,7 +20,7 @@ const schema = z
     name: z.string().trim().min(4).max(120),
     phone: z.string().trim().min(9).max(24),
     email: z.string().trim().email().max(254).optional().or(z.literal("")),
-    plan: z.enum(["INDIVIDUAL", "DUO", "DUO_INDIVIDUAL", "GROUP"]),
+    quantity: z.number().int().min(1).max(100),
     pickupPreference: z.enum([
       "CIDADE_PRIMEIRO_MAIO",
       "TALATONA_BELAS",
@@ -108,7 +109,21 @@ export async function POST(request: Request) {
         { status: 409 },
       );
 
-    const plan = commercialPlans[input.plan];
+    const activeSeats = await prisma.seatPreference.count({
+      where: { eventId: event.id, releasedAt: null },
+    });
+    const available = Math.max(0, event.capacity - activeSeats);
+    if (input.quantity > event.capacity || input.quantity > available)
+      return NextResponse.json(
+        { error: `Existem apenas ${available} lugares disponíveis.` },
+        { status: 409 },
+      );
+    const pricing = calculateTicketPricing(input.quantity, {
+      individual: Number(event.individualPrice),
+      duo: Number(event.duoPrice),
+      group: Number(event.groupPrice),
+    });
+    const plan = legacyPlanForQuantity(input.quantity);
     const pickup = pickupPreferences.find(
       (option) => option.code === input.pickupPreference,
     );
@@ -138,13 +153,14 @@ export async function POST(request: Request) {
         return tx.reservation.update({
           where: { id: draft.id },
           data: {
-            plan: input.plan,
+            plan,
             pickupPreference: pickup.label,
             pickupOther: input.pickupPreference === "OUTRO" ? input.pickupOther : null,
-            quantity: plan.quantity,
-            unitPrice: plan.listTotal / plan.quantity,
-            discountAmount: plan.listTotal - plan.total,
-            totalAmount: plan.total,
+            quantity: input.quantity,
+            unitPrice: pricing.listTotal / input.quantity,
+            discountAmount: pricing.discount,
+            totalAmount: pricing.total,
+            pricingBreakdown: pricing.composition,
             termsAcceptedAt: new Date(),
             campaignSource: input.campaignSource || null,
             utmSource: input.utmSource || null,
@@ -186,14 +202,15 @@ export async function POST(request: Request) {
         orderBy: { createdAt: "desc" },
       });
       const data = {
-        plan: input.plan,
+        plan,
         pickupPreference: pickup.label,
         pickupOther:
           input.pickupPreference === "OUTRO" ? input.pickupOther : null,
-        quantity: plan.quantity,
-        unitPrice: plan.listTotal / plan.quantity,
-        discountAmount: plan.listTotal - plan.total,
-        totalAmount: plan.total,
+        quantity: input.quantity,
+        unitPrice: pricing.listTotal / input.quantity,
+        discountAmount: pricing.discount,
+        totalAmount: pricing.total,
+        pricingBreakdown: pricing.composition,
         termsAcceptedAt: new Date(),
         campaignSource: input.campaignSource || null,
         utmSource: input.utmSource || null,

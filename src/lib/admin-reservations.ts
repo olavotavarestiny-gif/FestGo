@@ -27,6 +27,7 @@ export type AdminReservationFilters = {
   plan?: keyof typeof commercialPlans;
   pickup?: string;
   status?: ReservationStatus;
+  minors?: boolean;
 };
 
 export function parseAdminReservationFilters(input: {
@@ -35,6 +36,7 @@ export function parseAdminReservationFilters(input: {
   plan?: string;
   pickup?: string;
   status?: string;
+  minors?: string;
 }): AdminReservationFilters {
   const plan = Object.hasOwn(commercialPlans, input.plan ?? "")
     ? (input.plan as keyof typeof commercialPlans)
@@ -51,6 +53,7 @@ export function parseAdminReservationFilters(input: {
     plan,
     pickup,
     status,
+    minors: input.minors === "1",
   };
 }
 
@@ -62,6 +65,7 @@ export function reservationWhere(
     ...(filters.plan ? { plan: filters.plan } : {}),
     ...(filters.pickup ? { pickupPreference: filters.pickup } : {}),
     ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.minors ? { minorCount: { gt: 0 } } : {}),
     ...(filters.q
       ? {
           OR: [
@@ -106,5 +110,6 @@ export function filtersQuery(
   if (filters.plan) query.set("plan", filters.plan);
   if (filters.pickup) query.set("pickup", filters.pickup);
   if (filters.status) query.set("status", filters.status);
+  if (filters.minors) query.set("minors", "1");
   return query.toString();
 }

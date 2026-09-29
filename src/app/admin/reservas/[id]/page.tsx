@@ -113,8 +113,9 @@ export default async function ReservationPage({
                 <Link className="inline-flex items-center gap-2 rounded-full bg-white/[.06] px-4 py-2 hover:bg-white/[.1]" href={`/admin/clientes/${reservation.customer.id}`}><Users size={15} /> Histórico do cliente</Link>
               </div>
               <dl className="mt-7 grid gap-5 border-t border-white/[.08] pt-6 sm:grid-cols-2 lg:grid-cols-4">
-                <Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Por definir"} />
+                <Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Composição automática"} />
                 <Data label="Valor" value={formatKz(Number(reservation.totalAmount))} />
+                <Data label="Adultos / menores" value={`${reservation.quantity - reservation.minorCount} / ${reservation.minorCount}`} />
                 <Data label="Recolha pretendida" value={reservation.pickupOther || reservation.pickupPreference || "Por definir"} icon={<MapPin size={14} />} />
                 <Data label="Lugares pretendidos" value={reservation.seatPreferences.map((seat) => seat.seatNumber).join(", ") || (reservation.status === "WAITLIST" ? "Lista de espera" : "—")} />
               </dl>
@@ -122,8 +123,9 @@ export default async function ReservationPage({
 
             <section className="card p-6 sm:p-8">
               <h2 className="font-black">Passageiros</h2>
-              <ul className="mt-4 grid gap-3 sm:grid-cols-2">{reservation.passengers.map((passenger, index) => <li className="rounded-xl bg-white/[.05] p-3 text-sm text-white/75" key={passenger.id}><small className="block text-white/35">Passageiro {index + 1}</small><b>{passenger.fullName}</b></li>)}</ul>
+              <ul className="mt-4 grid gap-3 sm:grid-cols-2">{reservation.passengers.map((passenger, index) => <li className="rounded-xl bg-white/[.05] p-3 text-sm text-white/75" key={passenger.id}><small className="block text-white/35">Passageiro {index + 1}</small><b>{passenger.fullName}</b><small className="mt-1 block text-white/40">{passenger.ageAtEvent == null ? "Data de nascimento por completar" : `${passenger.ageAtEvent} anos${passenger.isMinor ? " · menor" : " · adulto"}`}</small></li>)}</ul>
               {!reservation.passengers.length && <p className="mt-3 text-sm text-white/35">A inscrição ainda não tem passageiros concluídos.</p>}
+              {reservation.minorCount > 0 && <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4 text-sm"><b>Responsável pelos menores</b><p className="mt-1 text-white/60">{reservation.minorGuardianName} · {reservation.minorGuardianPhone}</p></div>}
             </section>
 
             <section className="card p-6 sm:p-8">

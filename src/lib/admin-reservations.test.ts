@@ -21,6 +21,7 @@ describe("admin reservation filters", () => {
       plan: "DUO",
       pickup: "Talatona — Belas Shopping",
       status: "PRE_RESERVED",
+      minors: false,
     });
     expect(
       parseAdminReservationFilters({ plan: "INVALID", status: "INVALID" }),
@@ -30,6 +31,7 @@ describe("admin reservation filters", () => {
       plan: undefined,
       pickup: undefined,
       status: undefined,
+      minors: false,
     });
   });
 
@@ -54,5 +56,11 @@ describe("admin reservation filters", () => {
       plan: "INDIVIDUAL",
       status: "PAID",
     });
+  });
+
+  it("filters reservations that include minors", () => {
+    const filters = parseAdminReservationFilters({ minors: "1" });
+    expect(reservationWhere(filters).minorCount).toEqual({ gt: 0 });
+    expect(new URLSearchParams(filtersQuery(filters)).get("minors")).toBe("1");
   });
 });

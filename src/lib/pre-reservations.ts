@@ -37,6 +37,104 @@ export const commercialPlans = {
 
 export type CommercialPlanCode = keyof typeof commercialPlans;
 
+export type TicketPrices = {
+  individual: number;
+  duo: number;
+  group: number;
+};
+
+export const defaultTicketPrices: TicketPrices = {
+  individual: 25_000,
+  duo: 47_500,
+  group: 90_000,
+};
+
+export function calculateTicketPricing(
+  quantity: number,
+  prices: TicketPrices = defaultTicketPrices,
+) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100)
+    throw new Error("Quantidade de bilhetes inválida.");
+  const packages = [
+    { key: "group", size: 4, price: prices.group },
+    { key: "duo", size: 2, price: prices.duo },
+    { key: "individual", size: 1, price: prices.individual },
+  ] as const;
+  const best: Array<
+    | { total: number; individual: number; duo: number; group: number }
+    | undefined
+  > = [{ total: 0, individual: 0, duo: 0, group: 0 }];
+  for (let count = 1; count <= quantity; count += 1) {
+    for (const item of packages) {
+      const previous = best[count - item.size];
+      if (!previous) continue;
+      const candidate = {
+        ...previous,
+        total: previous.total + item.price,
+        [item.key]: previous[item.key] + 1,
+      };
+      if (!best[count] || candidate.total < best[count]!.total)
+        best[count] = candidate;
+    }
+  }
+  const result = best[quantity]!;
+  return {
+    quantity,
+    total: result.total,
+    listTotal: quantity * prices.individual,
+    discount: quantity * prices.individual - result.total,
+    composition: {
+      individual: result.individual,
+      duo: result.duo,
+      group: result.group,
+    },
+  };
+}
+
+export function legacyPlanForQuantity(quantity: number): CommercialPlanCode | null {
+  return quantity === 1
+    ? "INDIVIDUAL"
+    : quantity === 2
+      ? "DUO"
+      : quantity === 3
+        ? "DUO_INDIVIDUAL"
+        : quantity === 4
+          ? "GROUP"
+          : null;
+}
+
+export function pricingLabel(composition: {
+  individual: number;
+  duo: number;
+  group: number;
+}) {
+  return [
+    composition.group && `${composition.group} Grupo`,
+    composition.duo && `${composition.duo} Dupla`,
+    composition.individual && `${composition.individual} Individual`,
+  ]
+    .filter(Boolean)
+    .join(" + ");
+}
+
+export function ageOnDate(birthDate: Date, eventDate: Date) {
+  let age = eventDate.getUTCFullYear() - birthDate.getUTCFullYear();
+  const beforeBirthday =
+    eventDate.getUTCMonth() < birthDate.getUTCMonth() ||
+    (eventDate.getUTCMonth() === birthDate.getUTCMonth() &&
+      eventDate.getUTCDate() < birthDate.getUTCDate());
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
+export function parseBirthDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value
+    ? null
+    : date;
+}
+
 export const pickupPreferences = [
   { code: "CIDADE_PRIMEIRO_MAIO", label: "Cidade — Primeiro de Maio" },
   { code: "TALATONA_BELAS", label: "Talatona — Belas Shopping" },

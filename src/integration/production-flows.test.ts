@@ -254,31 +254,41 @@ describe.skipIf(!enabled)("production database flows", () => {
     ).toBe(1);
   });
 
-  it("creates every commercial plan at the exact advertised total", async () => {
+  it("calculates quantities 1 to 8 and identifies minors", async () => {
     process.env.BOOKING_MODE = "PRE_RESERVATION";
     process.env.PRE_RESERVATIONS_ENABLED = "true";
     process.env.PAYMENTS_ENABLED = "false";
     delete process.env.ZIETT_API_KEY;
     delete process.env.KUKUGEST_API_KEY;
     delete process.env.CRON_SECRET;
-    const cases = [
-      ["INDIVIDUAL", 1, 25_000],
-      ["DUO", 2, 47_500],
-      ["DUO_INDIVIDUAL", 3, 72_500],
-      ["GROUP", 4, 90_000],
-    ] as const;
-    let nextSeat = 1;
-    for (const [plan, quantity, total] of cases) {
+    const overCapacity = await createPreReservationLead(
+      new Request("http://localhost/api/pre-reservations/lead", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "10.1.0.99" },
+        body: JSON.stringify({
+          name: "Reserva acima da capacidade",
+          phone: "+244924000099",
+          quantity: 31,
+          pickupPreference: "TALATONA_BELAS",
+          dataConsent: true,
+          idempotencyKey: randomUUID(),
+        }),
+      }),
+    );
+    expect(overCapacity.status).toBe(409);
+    const cases = [25_000, 47_500, 72_500, 90_000, 115_000, 137_500, 162_500, 180_000];
+    for (const [index, total] of cases.entries()) {
+      const quantity = index + 1;
       const phone = `+24492400000${quantity}`;
       const leadResponse = await createPreReservationLead(
         new Request("http://localhost/api/pre-reservations/lead", {
           method: "POST",
           headers: { "content-type": "application/json", "x-forwarded-for": `10.1.0.${quantity}` },
           body: JSON.stringify({
-            name: `Responsável ${plan}`,
+            name: `Responsável ${quantity}`,
             phone,
-            email: `${plan.toLowerCase()}@example.test`,
-            plan,
+            email: `quantity-${quantity}@example.test`,
+            quantity,
             pickupPreference: "TALATONA_BELAS",
             dataConsent: true,
             marketingConsent: false,
@@ -288,7 +298,8 @@ describe.skipIf(!enabled)("production database flows", () => {
       );
       expect(leadResponse.status).toBe(201);
       const lead = await leadResponse.json();
-      const seats = Array.from({ length: quantity }, () => nextSeat++);
+      const seats = quantity === 3 ? [21, 22, 23] : Array.from({ length: quantity }, (_, seat) => seat + 1);
+      const includesMinor = quantity === 5;
       const completeResponse = await completePreReservation(
         new Request("http://localhost/api/pre-reservations", {
           method: "POST",
@@ -296,7 +307,12 @@ describe.skipIf(!enabled)("production database flows", () => {
           body: JSON.stringify({
             reservationId: lead.reservationId,
             accessToken: lead.accessToken,
-            passengers: Array.from({ length: quantity }, (_, index) => `Passageiro ${plan} ${index + 1}`),
+            passengers: Array.from({ length: quantity }, (_, passengerIndex) => ({
+              fullName: `Passageiro ${quantity} ${passengerIndex + 1}`,
+              birthDate: includesMinor && passengerIndex === 0 ? "2012-01-01" : "1990-01-01",
+            })),
+            minorGuardianName: includesMinor ? "Adulto Responsável" : "",
+            minorGuardianPhone: includesMinor ? "+244924999999" : "",
             seats,
             joinWaitlist: false,
             terms: true,
@@ -308,6 +324,13 @@ describe.skipIf(!enabled)("production database flows", () => {
       expect(completed.quantity).toBe(quantity);
       expect(completed.total).toBe(total);
       expect(completed.seats).toEqual(seats);
+      const stored = await prisma.reservation.findUniqueOrThrow({ where: { id: lead.reservationId } });
+      expect(stored.minorCount).toBe(includesMinor ? 1 : 0);
+      if (quantity !== 3)
+        await prisma.seatPreference.updateMany({
+          where: { reservationId: lead.reservationId, releasedAt: null },
+          data: { status: "RELEASED", releasedAt: new Date() },
+        });
     }
   });
 
@@ -319,7 +342,7 @@ describe.skipIf(!enabled)("production database flows", () => {
         body: JSON.stringify({
           name: "Responsável Outro",
           phone: "+244925000001",
-          plan: "INDIVIDUAL",
+          quantity: 1,
           pickupPreference: "OUTRO",
           pickupOther: "",
           dataConsent: true,
@@ -337,7 +360,7 @@ describe.skipIf(!enabled)("production database flows", () => {
           body: JSON.stringify({
             name: `Concorrente ${suffix}`,
             phone: `+24492600000${suffix}`,
-            plan: "INDIVIDUAL",
+            quantity: 1,
             pickupPreference: "OUTRO",
             pickupOther: "Kilamba",
             dataConsent: true,
@@ -356,7 +379,7 @@ describe.skipIf(!enabled)("production database flows", () => {
           body: JSON.stringify({
             reservationId: lead.reservationId,
             accessToken: lead.accessToken,
-            passengers: [`Concorrente ${index + 1}`],
+            passengers: [{ fullName: `Concorrente ${index + 1}`, birthDate: "1990-01-01" }],
             seats: [30],
             joinWaitlist: false,
             terms: true,
@@ -609,8 +632,13 @@ describe.skipIf(!enabled)("production database flows", () => {
           "x-forwarded-for": "10.4.0.1",
         },
         body: JSON.stringify({
-          plan: "DUO",
-          passengers: ["Passageiro actualizado 1", "Passageiro actualizado 2"],
+          quantity: 2,
+          passengers: [
+            { fullName: "Passageiro actualizado 1", birthDate: "1990-01-01" },
+            { fullName: "Passageiro actualizado 2", birthDate: "2012-01-01" },
+          ],
+          minorGuardianName: "Adulto Responsável",
+          minorGuardianPhone: "+244923999999",
           seats: originalSeats,
           pickupPreference: "OUTRO",
           pickupOther: "Kilamba",
@@ -631,6 +659,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect(changed.quantity).toBe(2);
     expect(Number(changed.totalAmount)).toBe(47_500);
     expect(changed.passengers).toHaveLength(2);
+    expect(changed.minorCount).toBe(1);
     expect(changed.seatPreferences.map((seat) => seat.seatNumber).sort()).toEqual(originalSeats);
     expect(changed.pickupPreference).toBe("Outro");
     expect(changed.pickupOther).toBe("Kilamba");
@@ -672,8 +701,13 @@ describe.skipIf(!enabled)("production database flows", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          plan: "DUO",
-          passengers: ["Passageiro actualizado 1", "Passageiro actualizado 2"],
+          quantity: 2,
+          passengers: [
+            { fullName: "Passageiro actualizado 1", birthDate: "1990-01-01" },
+            { fullName: "Passageiro actualizado 2", birthDate: "2012-01-01" },
+          ],
+          minorGuardianName: "Adulto Responsável",
+          minorGuardianPhone: "+244923999999",
           seats: originalSeats,
           pickupPreference: "OUTRO",
           pickupOther: "Kilamba",

@@ -16,6 +16,11 @@ export async function GET() {
       select: {
         id: true,
         capacity: true,
+        eventDate: true,
+        minorAgeLimit: true,
+        individualPrice: true,
+        duoPrice: true,
+        groupPrice: true,
         estimatedTravelDuration: true,
         travelEstimateConfirmed: true,
       },
@@ -29,6 +34,13 @@ export async function GET() {
     return NextResponse.json(
       {
         capacity: event.capacity,
+        eventDate: event.eventDate.toISOString(),
+        minorAgeLimit: event.minorAgeLimit,
+        prices: {
+          individual: Number(event.individualPrice),
+          duo: Number(event.duoPrice),
+          group: Number(event.groupPrice),
+        },
         seats: preferences.map((seat) => ({
           number: seat.seatNumber,
           state: seat.status === "CONFIRMED" ? "confirmed" : "unavailable",

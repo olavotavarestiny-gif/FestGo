@@ -76,13 +76,13 @@ export default async function CustomerPage({
                 <span className="w-fit rounded-full bg-violet/15 px-3 py-1 text-xs font-bold text-violet-200">{reservationStatusLabels[reservation.status]}</span>
               </div>
               <dl className="mt-6 grid gap-4 border-t border-white/[.08] pt-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Por definir"} />
+                <Data label="Plano" value={planLabels[reservation.plan ?? ""] ?? "Composição automática"} />
                 <Data label="Valor" value={formatKz(Number(reservation.totalAmount))} />
                 <Data label="Recolha" value={reservation.pickupOther || reservation.pickupPreference || "Por definir"} />
                 <Data label="Lugares" value={reservation.seatPreferences.map((seat) => seat.seatNumber).join(", ") || "—"} />
               </dl>
               <div className="mt-6 grid gap-5 lg:grid-cols-3">
-                <History title="Passageiros" empty="Nenhum passageiro concluído.">{reservation.passengers.map((passenger) => <li key={passenger.id}>{passenger.fullName}</li>)}</History>
+                <History title="Passageiros" empty="Nenhum passageiro concluído.">{reservation.passengers.map((passenger) => <li key={passenger.id}>{passenger.fullName}<small>{passenger.ageAtEvent == null ? "Nascimento por completar" : `${passenger.ageAtEvent} anos${passenger.isMinor ? " · menor" : ""}`}</small></li>)}</History>
                 <History title="Acompanhamento" empty="Sem acompanhamento.">{reservation.contactActivities.map((activity) => <li key={activity.id}><b>{activity.user?.name ?? "Sistema"}</b> · {activity.outcome}<small>{activity.comment || "Sem comentário"} · {activity.createdAt.toLocaleString("pt-AO", { timeZone: "Africa/Luanda" })}</small></li>)}</History>
                 <History title="Pagamentos" empty="Sem pagamentos registados.">{reservation.payments.map((payment) => <li key={payment.id}><b>{payment.status}</b> · {formatKz(Number(payment.amount))}<small>{payment.createdAt.toLocaleString("pt-AO", { timeZone: "Africa/Luanda" })}</small></li>)}</History>
               </div>

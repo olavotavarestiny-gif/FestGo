@@ -53,6 +53,18 @@ export default async function LegalPage({
               evento, salvo indicação expressa.
             </p>
           </section>
+          {legal === "privacidade" && (
+            <section>
+              <h2 className="text-xl font-black text-white">Dados dos passageiros</h2>
+              <p className="mt-2">
+                Recolhemos o nome e a data de nascimento para gerir a viagem e
+                calcular a idade na data do evento. Quando existirem menores,
+                registamos apenas o nome e o telefone do adulto responsável.
+                Estes dados ficam limitados à equipa administrativa autorizada;
+                não solicitamos documentos dos menores neste processo.
+              </p>
+            </section>
+          )}
           <section>
             <h2 className="text-xl font-black text-white">
               Reservas e pagamentos
