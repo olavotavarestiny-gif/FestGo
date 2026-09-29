@@ -50,6 +50,7 @@ export default async function IntegratedTestPage({
               <div><dt>Produto fixo</dt><dd className="break-all">{paymentProvider === "wipay" ? "WiPay Sandbox" : TEST_PRODUCT_ID}</dd></div>
               <div><dt>Estado</dt><dd>{reservation.status}</dd></div>
               {reservation.payment?.providerPaymentId && <div><dt>Transacção</dt><dd className="break-all">{reservation.payment.providerPaymentId}</dd></div>}
+              {typeof details.diagnosticDetail === "string" && <div><dt>Host devolvido</dt><dd className="break-all">{details.diagnosticDetail}</dd></div>}
               {lastWebhook && <div><dt>Último webhook</dt><dd>{lastWebhook.signatureValid ? "Assinatura válida" : "Assinatura inválida"} · {lastWebhook.processedAt ? "processado" : "pendente"}</dd></div>}
             </dl>
             {reservation.ticket && <Link className="btn-primary mt-6" href={`/admin/teste-gateway/bilhete/${reservation.ticket.publicToken}`}>Visualizar bilhete de teste <ExternalLink size={16} /></Link>}

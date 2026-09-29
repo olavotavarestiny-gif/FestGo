@@ -44,6 +44,12 @@ function resultFrom(payment: {
     reference: details.reference ?? null,
     instructions:
       typeof details.instructions === "string" ? details.instructions : null,
+    diagnosticCode:
+      typeof details.diagnosticCode === "string" ? details.diagnosticCode : null,
+    diagnosticDetail:
+      typeof details.diagnosticDetail === "string"
+        ? details.diagnosticDetail
+        : null,
   };
 }
 

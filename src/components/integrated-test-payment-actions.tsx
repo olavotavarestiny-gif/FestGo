@@ -65,7 +65,11 @@ export function IntegratedTestPaymentActions({
         throw new Error(result.error ?? "Não foi possível concluir a operação.");
       if (result.paymentUrl) setPaymentUrl(result.paymentUrl);
       if (result.reference && typeof result.reference === "object") setReference(result.reference);
-      setMessage(body.action === "RECONCILE" ? `Estado consultado: ${result.status}.` : `Cobrança sandbox de 100 Kz criada na ${paymentProvider === "wipay" ? "WiPay" : "gateway"}.`);
+      setMessage(
+        body.action === "RECONCILE"
+          ? `Estado consultado: ${result.status}.${result.diagnosticDetail ? ` Host devolvido: ${result.diagnosticDetail}.` : ""}`
+          : `Cobrança sandbox de 100 Kz criada na ${paymentProvider === "wipay" ? "WiPay" : "gateway"}.`,
+      );
       router.refresh();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Falha na operação.");
