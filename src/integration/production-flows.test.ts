@@ -11,6 +11,7 @@ import { PATCH as updatePreReservation } from "@/app/api/admin/pre-reservations/
 import { POST as managePaymentInvitation } from "@/app/api/admin/payment-invitations/[reservationId]/route";
 import { POST as updatePaymentInvitation } from "@/app/api/payment-invitations/[token]/route";
 import { POST as createGatewayTestPayment } from "@/app/api/admin/payment-test/route";
+import { DELETE as deleteCustomer } from "@/app/api/admin/customers/[id]/route";
 import {
   GET as inspectTicket,
   POST as validateTicket,
@@ -334,7 +335,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     }
   });
 
-  it("requires a custom pickup location and resolves simultaneous seat preference safely", async () => {
+  it("requires a custom pickup location and keeps unpaid seat choices as preferences", async () => {
     const invalid = await createPreReservationLead(
       new Request("http://localhost/api/pre-reservations/lead", {
         method: "POST",
@@ -387,7 +388,7 @@ describe.skipIf(!enabled)("production database flows", () => {
         }),
       ),
     ));
-    expect(attempts.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(attempts.map((response) => response.status).sort()).toEqual([201, 201]);
 
     const payment = await createPaymentIntent(
       new Request("http://localhost/api/payments/intent", {
@@ -528,9 +529,10 @@ describe.skipIf(!enabled)("production database flows", () => {
     });
     expect(approved.status).toBe("PAYMENT_PENDING");
     expect(approved.contactStatus).toBe("AWAITING_PAYMENT");
+    expect(approved.operationalConfirmed).toBe(true);
     expect(
       approved.seatPreferences.every(
-        (seat) => seat.status === "TEMPORARILY_HELD",
+        (seat) => seat.status === "PREFERRED",
       ),
     ).toBe(true);
     expect(
@@ -673,9 +675,10 @@ describe.skipIf(!enabled)("production database flows", () => {
         { status: 202, headers: { "content-type": "application/json" } },
       ),
     );
+    const customPaymentMessage = `FestGo: Paga aqui https://pay.example/checkout/${reservation.reference}`;
     expect((await invitationRequest({
       action: "SEND_SMS",
-      acknowledgeMultipleSegments: true,
+      content: customPaymentMessage,
     })).status).toBe(200);
     expect((await invitationRequest({
       action: "SEND_SMS",
@@ -691,8 +694,8 @@ describe.skipIf(!enabled)("production database flows", () => {
       },
     });
     expect(paymentSms.status).toBe("SENT");
-    expect(paymentSms.content).toContain(generated.link);
-    expect(paymentSms.segmentCount).toBeGreaterThan(1);
+    expect(paymentSms.content).toBe(customPaymentMessage);
+    expect(paymentSms.segmentCount).toBe(1);
     expect(paymentSms.providerMessageId).toBe("payment-link-message-1");
 
     expect((await invitationRequest({ action: "REVOKE" })).status).toBe(200);
@@ -777,8 +780,89 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect(retriedNotification.attempts).toBe(2);
     expect(retriedNotification.providerMessageId).toBe("approval-message-2");
     expect(ziettRequest).toHaveBeenCalledTimes(4);
+
+    const generatedRetry = await managePaymentInvitation(
+      new Request(
+        `http://localhost/api/admin/payment-invitations/${retryReservation.id}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({ action: "GENERATE" }),
+        },
+      ),
+      { params: Promise.resolve({ reservationId: retryReservation.id }) },
+    );
+    expect(generatedRetry.status).toBe(200);
+    const manualReference = `MANUAL-${randomUUID()}`;
+    const manualConfirmation = await managePaymentInvitation(
+      new Request(
+        `http://localhost/api/admin/payment-invitations/${retryReservation.id}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({
+            action: "CONFIRM_MANUAL_PAYMENT",
+            transactionReference: manualReference,
+          }),
+        },
+      ),
+      { params: Promise.resolve({ reservationId: retryReservation.id }) },
+    );
+    expect(manualConfirmation.status).toBe(200);
+    const manuallyPaid = await prisma.reservation.findUniqueOrThrow({
+      where: { id: retryReservation.id },
+      include: { payments: true, passengers: { include: { ticket: true } }, seatPreferences: true },
+    });
+    expect(manuallyPaid.status).toBe("PAID");
+    expect(manuallyPaid.payments).toHaveLength(1);
+    expect(manuallyPaid.payments[0]).toMatchObject({
+      provider: "manual-admin",
+      providerReference: manualReference,
+      status: "SUCCEEDED",
+    });
+    expect(manuallyPaid.seatPreferences.every((seat) => seat.status === "CONFIRMED")).toBe(true);
+    expect(manuallyPaid.passengers.every((passenger) => Boolean(passenger.ticket))).toBe(true);
     vi.unstubAllGlobals();
     delete process.env.ZIETT_API_KEY;
     delete process.env.ZIETT_SMS_REMITTER_ID;
+  });
+
+  it("allows an administrator to delete only an unconverted contact", async () => {
+    const admin = await prisma.user.create({
+      data: {
+        email: `delete-admin-${randomUUID()}@example.test`,
+        name: "Administrador de eliminação",
+        passwordHash: "test",
+        role: "ADMIN",
+      },
+    });
+    const customer = await prisma.customer.create({
+      data: {
+        fullName: "Contacto descartável",
+        phone: `+24491${Math.floor(1000000 + Math.random() * 8999999)}`,
+      },
+    });
+    const anonymous = await deleteCustomer(
+      new Request(`http://localhost/api/admin/customers/${customer.id}`, {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ id: customer.id }) },
+    );
+    expect(anonymous.status).toBe(401);
+    const session = createSessionToken({
+      userId: admin.id,
+      role: "ADMIN",
+      sessionVersion: admin.sessionVersion,
+      exp: Math.floor(Date.now() / 1000) + 60,
+    });
+    const removed = await deleteCustomer(
+      new Request(`http://localhost/api/admin/customers/${customer.id}`, {
+        method: "DELETE",
+        headers: { cookie: `festgo_session=${session}` },
+      }),
+      { params: Promise.resolve({ id: customer.id }) },
+    );
+    expect(removed.status).toBe(200);
+    expect(await prisma.customer.findUnique({ where: { id: customer.id } })).toBeNull();
   });
 });

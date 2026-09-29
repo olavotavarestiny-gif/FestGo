@@ -153,13 +153,14 @@ export async function POST(request: Request) {
               where: {
                 eventId: reservation.eventId,
                 seatNumber: { in: input.seats },
+                status: "CONFIRMED",
                 releasedAt: null,
               },
               select: { seatNumber: true },
             });
             if (taken.length)
               throw new PreReservationError(
-                "Um dos lugares acabou de ser escolhido. Selecciona outro.",
+                "Um dos lugares já foi confirmado. Selecciona outro.",
                 409,
                 "SEATS_TAKEN",
                 taken.map((seat) => seat.seatNumber),

@@ -280,7 +280,9 @@ export function BookingFlow() {
               <p className="eyebrow">Etapa 1 de 4</p><h1>Quantas pessoas vão viajar?</h1>
               <p className="pre-intro">Escolhe qualquer quantidade até aos lugares disponíveis. Aplicamos automaticamente a combinação mais económica.</p>
               <label className="pre-field-label">Quantidade de bilhetes
-                <input className="pre-field" type="number" inputMode="numeric" min={1} max={Math.max(1, availableCount)} value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(availableCount || 1, Number(event.target.value) || 1)))} />
+                <select className="pre-field" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))}>
+                  {Array.from({ length: Math.max(1, availableCount) }, (_, index) => index + 1).map((value) => <option value={value} key={value}>{value} {value === 1 ? "passageiro" : "passageiros"}</option>)}
+                </select>
               </label>
               <div className="pre-summary-list review mt-5">
                 <Summary label="Composição" value={pricingLabel(pricing.composition)} />

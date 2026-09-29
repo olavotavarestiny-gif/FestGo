@@ -69,6 +69,7 @@ export default async function PaymentInvitationPage({
     where: {
       eventId: reservation.eventId,
       reservationId: { not: reservation.id },
+      status: "CONFIRMED",
       releasedAt: null,
     },
     select: { seatNumber: true },

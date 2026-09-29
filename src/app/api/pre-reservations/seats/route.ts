@@ -28,7 +28,7 @@ export async function GET() {
     if (!event)
       return NextResponse.json({ error: "Evento não encontrado." }, { status: 404 });
     const preferences = await prisma.seatPreference.findMany({
-      where: { eventId: event.id, releasedAt: null },
+      where: { eventId: event.id, status: "CONFIRMED", releasedAt: null },
       select: { seatNumber: true, status: true },
     });
     return NextResponse.json(
@@ -43,7 +43,7 @@ export async function GET() {
         },
         seats: preferences.map((seat) => ({
           number: seat.seatNumber,
-          state: seat.status === "CONFIRMED" ? "confirmed" : "unavailable",
+          state: "confirmed" as const,
         })),
         travelDuration:
           event.travelEstimateConfirmed && event.estimatedTravelDuration

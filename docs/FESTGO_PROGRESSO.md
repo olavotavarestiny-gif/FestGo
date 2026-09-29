@@ -1,7 +1,7 @@
 # FestGO — Progresso
 
 Última actualização: 29 de Setembro de 2026
-Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbox**
+Fase concluída neste ciclo: **Operação manual de pagamentos, lugares e contactos**
 
 ## Funcionalidades concluídas
 
@@ -13,7 +13,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - Painel responsivo com indicadores reais de inscrições, análise, aprovações, espera de pagamento, pagamentos confirmados, passageiros, procura por recolha e lugares vendidos.
 - Pesquisa por referência, contacto, telefone e nome de passageiro; filtros por evento, plano, recolha e estado; paginação e CSV com os mesmos filtros.
 - Ficha privada de cliente com contactos, reservas, passageiros, acompanhamento e resumo do histórico de pagamentos.
-- Aprovação transaccional de pré-reserva, retenção dos lugares, histórico comercial e auditoria do administrador responsável.
+- Aprovação transaccional de pré-reserva, manutenção dos lugares apenas como preferência, histórico comercial e auditoria do administrador responsável.
 - Planos conferidos: Individual (25.000 Kz), Dupla (47.500 Kz), Dupla + Individual (72.500 Kz) e Grupo (90.000 Kz).
 - Pontos conferidos: Cidade — Primeiro de Maio, Talatona — Belas Shopping, 11 de Novembro, Benfica — Girafa e Outro.
 - Sincronização automática com KukuGest desactivada por omissão; cron removido e código histórico preservado.
@@ -61,6 +61,12 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - O provedor anterior permanece disponível por `PAYMENTS_PROVIDER=paygo` para rollback. A WiPay é seleccionada apenas com `PAYMENTS_PROVIDER=wipay`.
 - O estado público consulta apenas o estado local da WiPay: a documentação recebida não define um endpoint autoritativo de consulta, cancelamento ou reembolso, por isso não foi criada uma reconciliação especulativa.
 - Pagamentos e vendas públicas continuam desactivados; nenhuma credencial, cobrança real ou configuração externa foi alterada.
+- Os lugares escolhidos numa inscrição ou convite permanecem como preferências e não reduzem a disponibilidade pública. Só passam a `CONFIRMED` depois de pagamento validado e confirmação operacional da FestGo.
+- A confirmação manual de pagamento exige administrador autenticado, referência externa não reutilizada, reserva previamente aprovada, lugares ainda disponíveis e confirmação explícita. A mesma operação regista o pagamento, ocupa os lugares e emite os bilhetes uma única vez.
+- O painel permite editar uma mensagem SMS, colar um link HTTPS directo de pagamento, pré-visualizar caracteres/codificação/segmentos e enviar manualmente através da Ziett, mantendo os limites e a prevenção de duplicados existentes.
+- A quantidade de bilhetes no formulário é agora escolhida numa lista, evitando o problema do valor `1` que não podia ser apagado em alguns telemóveis.
+- Contactos sem pagamentos, bilhetes ou histórico comercial protegido podem ser eliminados por um administrador após confirmação escrita. Reservas e dados dependentes não convertidos são removidos na mesma transacção.
+- FestGo Power passou de “em preparação” para serviço confirmado na landing e na FAQ. Não foram adicionadas imagens geradas.
 
 ## Ficheiros modificados
 
@@ -74,6 +80,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - Teste integrado: modelos Prisma isolados, APIs administrativas de reserva/pagamento e bilhete, tratamento de webhook, páginas em `/admin/teste-gateway`, componentes do fluxo e teste de integração dedicado.
 - Quantidades flexíveis: `src/lib/pre-reservations.ts`, formulário de reserva, convite personalizado, APIs de pré-reserva/convite, painel, CSV, esquema Prisma e migração aditiva.
 - WiPay Fase 2: `src/lib/integrations/wipay.ts`, `src/app/api/webhooks/wipay/route.ts`, APIs de intenção/estado/saúde, convite de pagamento, `.env.example` e testes unitários/integrados dedicados.
+- Operação manual: APIs de convite/pagamento e eliminação de contactos, acções administrativas, formulário de quantidade, regras de ocupação dos lugares, callbacks/reconciliação e testes de integração actualizados.
 
 ## Migrações aplicadas
 
@@ -85,6 +92,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - `20260928210000_integrated_gateway_test`: cria apenas `TestReservation`, `TestPayment`, `TestPaymentWebhookEvent`, `TestTicket` e `TestTicketValidation`. A migração é aditiva e não referencia lugares nem reservas oficiais.
 - `20260929120000_flexible_ticket_quantities`: adiciona preços configuráveis e limite etário ao evento; composição, contagem de menores e responsável à reserva; nascimento, idade e classificação ao passageiro. Todos os novos campos preservam dados antigos.
 - A Fase 2 WiPay não exige nova migração; reutiliza os registos existentes de pagamentos, eventos de webhook, reservas, lugares e bilhetes.
+- Estes ajustes não exigem nova migração; reutilizam `Payment`, `SeatPreference`, `Ticket`, `Notification` e `AuditLog`.
 
 ## Testes realizados
 
@@ -116,6 +124,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - A WiPay aceita `WIPAY_APP_URL` para definir exclusivamente os URLs de retorno e callback, preservando a variável histórica `APP_URL` das restantes integrações.
 - O fluxo administrativo isolado de 100 Kz suporta agora WiPay sandbox: cria a cobrança apenas após confirmação do administrador, recebe-a em `/api/webhooks/wipay-test`, valida a assinatura e emite exclusivamente um bilhete TESTE sem ocupar lugares ou criar reservas oficiais.
 - O webhook sandbox é idempotente, confirma o valor fixo de 100 AOA, moeda, identificador e referência, e não permite que uma rejeição tardia reverta uma confirmação já aceite.
+- Ajustes operacionais: `npm run typecheck`, `git diff --check`, 44 testes automatizados sem base externa aprovados e `npm run build` aprovado. Os 17 testes que exigem `TEST_DATABASE_URL` ficaram correctamente ignorados porque não existe PostgreSQL de teste configurada e o Docker local não estava activo. Nenhum SMS, pagamento ou contacto real foi alterado.
 
 ## Problemas encontrados
 
@@ -150,6 +159,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - O diagnóstico `CHECKOUT_HOST_INVALID` comprovou que a resposta real usa um subdomínio WiPay diferente do exemplo `hosted.wipay.ao`. A allowlist continua restrita a HTTPS, mas aceita agora o domínio oficial `wipay.ao` e os seus subdomínios, rejeitando qualquer domínio externo ou sufixo enganador.
 - O segundo diagnóstico identificou o hostname real `pay.wiza.ao`. A allowlist passou a aceitar exactamente esse host da Wiza, sem autorizar genericamente outros subdomínios `*.wiza.ao`.
 - Um pagamento sandbox de 100 AOA foi confirmado no portal WiPay como aceite (`2000`), mas os logs Vercel provaram ausência total de tentativa de entrega do callback. `WIPAY_CALLBACK_ORIGIN` permite agora manter o checkout/painel no Preview e enviar callbacks para o domínio estável de produção, sem activar vendas ou pagamentos públicos.
+- A API pública actual da Ziett cobre envio e consulta do estado de entrega, mas não disponibiliza ainda um fluxo implementável de recepção de respostas SMS. O painel envia mensagens personalizadas e guarda o estado do envio; não funciona como caixa de entrada.
 
 ## Operação de contas administrativas
 
@@ -177,7 +187,7 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 - Landing reposicionada como **FestGo Experience — Brunch Mangais**, com hero comercial, proposta de valor, seis serviços, FestGo Kids, confiança, percurso, rotas, conversão e FAQ.
 - Removida da proposta a fotografia artificial disponível no repositório. A interface usa apenas identidade visual, ícones e ilustração SVG própria enquanto não existirem fotografias reais aprovadas.
-- FestGo Power e Kids Club são apresentados como sujeitos a confirmação; a inscrição do Kids Club permanece inactiva.
+- FestGo Power é apresentado como confirmado; apenas o Kids Club continua sujeito a confirmação e com inscrição inactiva.
 - CTA de pré-reserva preserva `source` e parâmetros UTM. Eventos locais/data layer preparados para visualização, serviços, CTAs, início e conclusão da pré-reserva e compra confirmada.
 - Formulário passa a recolher opcionalmente zona aproximada de regresso, sugestão de música e interesse nas actividades infantis, sem documentos ou dados pessoais adicionais.
 - As três preferências são guardadas no histórico auditável da reserva, sem migração e sem alterar os dados operacionais existentes.

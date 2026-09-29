@@ -424,6 +424,44 @@ export async function reconcilePayment(localPaymentId: string) {
       },
     });
     if (status === "SUCCEEDED") {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${local.reservation.eventId} FOR UPDATE`;
+      const currentReservation = await tx.reservation.findUniqueOrThrow({
+        where: { id: local.reservationId },
+        include: { seatPreferences: { where: { releasedAt: null } } },
+      });
+      const seatNumbers = currentReservation.seatPreferences.map(
+        (seat) => seat.seatNumber,
+      );
+      const conflicts = seatNumbers.length
+        ? await tx.seatPreference.count({
+            where: {
+              eventId: currentReservation.eventId,
+              reservationId: { not: currentReservation.id },
+              seatNumber: { in: seatNumbers },
+              status: "CONFIRMED",
+              releasedAt: null,
+            },
+          })
+        : 0;
+      if (
+        !currentReservation.operationalConfirmed ||
+        seatNumbers.length !== currentReservation.quantity ||
+        conflicts
+      ) {
+        await tx.reservation.update({
+          where: { id: local.reservationId },
+          data: { status: "PAYMENT_UNCERTAIN", paidAt: new Date() },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "PAYMENT_RECEIVED_WITHOUT_CONFIRMED_SEATS",
+            entityType: "Reservation",
+            entityId: local.reservationId,
+            metadata: { paymentId: local.id, conflicts },
+          },
+        });
+        return;
+      }
       const transitioned = await tx.reservation.updateMany({
         where: {
           id: local.reservationId,

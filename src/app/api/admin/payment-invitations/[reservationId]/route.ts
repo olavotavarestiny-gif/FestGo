@@ -19,7 +19,12 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("REVOKE") }),
   z.object({
     action: z.literal("SEND_SMS"),
+    content: z.string().trim().min(1).max(800).optional(),
     acknowledgeMultipleSegments: z.boolean().default(false),
+  }),
+  z.object({
+    action: z.literal("CONFIRM_MANUAL_PAYMENT"),
+    transactionReference: z.string().trim().min(4).max(160),
   }),
 ]);
 
@@ -58,6 +63,8 @@ export async function POST(
         where: { status: { in: ["CREATED", "PENDING", "UNKNOWN", "SUCCEEDED"] } },
         take: 1,
       },
+      passengers: true,
+      seatPreferences: { where: { releasedAt: null } },
     },
   });
   if (!reservation)
@@ -197,13 +204,145 @@ export async function POST(
     return NextResponse.json({ ok: true, ...responseFor(revoked) });
   }
 
+  if (parsed.data.action === "CONFIRM_MANUAL_PAYMENT") {
+    const transactionReference = parsed.data.transactionReference;
+    if (!reservation.operationalConfirmed)
+      return NextResponse.json(
+        { error: "A pré-reserva ainda não tem confirmação operacional." },
+        { status: 409 },
+      );
+    try {
+      await enforceRateLimit({
+        namespace: "admin-manual-payment-confirmation",
+        identifier: `${user.id}:${reservationId}`,
+        limit: 3,
+        windowMs: 60 * 60_000,
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "Limite de confirmações atingido. Tenta mais tarde." },
+        { status: 429 },
+      );
+    }
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${reservation.eventId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`manual-payment:${transactionReference}`}, 0))`;
+      const referenceAlreadyUsed = await tx.payment.findFirst({
+        where: {
+          OR: [
+            { providerReference: transactionReference },
+            { providerPaymentId: transactionReference },
+          ],
+        },
+        select: { id: true },
+      });
+      if (referenceAlreadyUsed)
+        return { ok: false, reason: "REFERENCE" } as const;
+      const current = await tx.reservation.findUniqueOrThrow({
+        where: { id: reservationId },
+        include: {
+          passengers: true,
+          seatPreferences: { where: { releasedAt: null } },
+          payments: {
+            where: { status: { in: ["CREATED", "PENDING", "UNKNOWN", "SUCCEEDED"] } },
+          },
+        },
+      });
+      if (
+        current.status !== "PAYMENT_PENDING" ||
+        !current.operationalConfirmed ||
+        current.payments.length
+      )
+        return { ok: false, reason: "STATE" } as const;
+      const seats = current.seatPreferences.map((seat) => seat.seatNumber);
+      const conflicts = seats.length
+        ? await tx.seatPreference.count({
+            where: {
+              eventId: current.eventId,
+              reservationId: { not: current.id },
+              seatNumber: { in: seats },
+              status: "CONFIRMED",
+              releasedAt: null,
+            },
+          })
+        : 0;
+      if (seats.length !== current.quantity || conflicts)
+        return { ok: false, reason: "SEATS" } as const;
+      const now = new Date();
+      await tx.payment.create({
+        data: {
+          reservationId: current.id,
+          provider: "manual-admin",
+          idempotencyKey: `manual-${current.id}`,
+          method: "external-link",
+          status: "SUCCEEDED",
+          amount: current.totalAmount,
+          currency: current.currency,
+          providerReference: transactionReference,
+          rawStatus: "verified_by_admin",
+          reconciledAt: now,
+          providerDetails: { confirmedById: user.id },
+        },
+      });
+      await tx.reservation.update({
+        where: { id: current.id },
+        data: { status: "PAID", paidAt: now },
+      });
+      await tx.seatPreference.updateMany({
+        where: { reservationId: current.id, releasedAt: null },
+        data: { status: "CONFIRMED" },
+      });
+      await tx.ticket.createMany({
+        data: current.passengers.map((passenger) => ({ passengerId: passenger.id })),
+        skipDuplicates: true,
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "PAYMENT_MANUALLY_VERIFIED",
+          entityType: "Reservation",
+          entityId: current.id,
+          metadata: {
+            transactionReference,
+            amount: Number(current.totalAmount),
+            currency: current.currency,
+            seats,
+          },
+          ipAddress: clientIp(request),
+        },
+      });
+      return { ok: true } as const;
+    });
+    if (!result.ok)
+      return NextResponse.json(
+        {
+          error:
+            result.reason === "SEATS"
+              ? "Os lugares pretendidos já não estão todos disponíveis. Altera-os antes de confirmar o pagamento."
+              : result.reason === "REFERENCE"
+                ? "Esta referência de pagamento já foi utilizada. Confirma a transacção antes de tentar novamente."
+              : "A reserva já foi alterada ou tem um pagamento associado.",
+        },
+        { status: 409 },
+      );
+    return NextResponse.json({ ok: true, status: "PAID" });
+  }
+
   if (invitation.revokedAt || invitation.expiresAt <= new Date())
     return NextResponse.json(
       { error: "O convite está revogado ou expirado." },
       { status: 409 },
     );
   const link = paymentInvitationLink(invitation);
-  const content = smsTemplates.paymentInvitation(link, reservation.reference);
+  const content =
+    parsed.data.action === "SEND_SMS" && parsed.data.content
+      ? parsed.data.content
+      : smsTemplates.paymentInvitation(link, reservation.reference);
+  if (!/https:\/\/[^\s]+/i.test(content))
+    return NextResponse.json(
+      { error: "A mensagem deve incluir um link HTTPS de pagamento." },
+      { status: 400 },
+    );
   const analysis = analyzeSms(content);
   if (
     (!analysis.isSingleSegment || analysis.encoding !== "GSM-7") &&

@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       );
 
     const activeSeats = await prisma.seatPreference.count({
-      where: { eventId: event.id, releasedAt: null },
+      where: { eventId: event.id, status: "CONFIRMED", releasedAt: null },
     });
     const available = Math.max(0, event.capacity - activeSeats);
     if (input.quantity > event.capacity || input.quantity > available)

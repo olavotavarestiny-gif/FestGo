@@ -54,6 +54,7 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
         eventId,
         customerId: customer.id,
         status: "AWAITING_PAYMENT",
+        operationalConfirmed: true,
         quantity: 1,
         unitPrice: input.amount ?? 25_000,
         totalAmount: input.amount ?? 25_000,
@@ -66,7 +67,7 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
                 create: {
                   eventId,
                   seatNumber: input.seat,
-                  status: "TEMPORARILY_HELD",
+                  status: "PREFERRED",
                 },
               },
             }

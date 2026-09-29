@@ -11,7 +11,7 @@ import { event, formatKz } from "@/lib/data";
 
 const services: Array<{ name: string; tagline: string; description: string; benefit: string; status: "included" | "preparing"; icon: LucideIcon }> = [
   { name: "FestGo Welcome", tagline: "Um começo especial.", description: "Água, sumo e aperitivos de boas-vindas assim que embarcares.", benefit: "Começa o dia já no ambiente certo.", status: "included", icon: CupSoda },
-  { name: "FestGo Power", tagline: "Aproveita. Nós tratamos da bateria.", description: "Carregamento e guarda controlada do telemóvel, com registo e comprovativo.", benefit: "Mais bateria para aproveitares o evento.", status: "preparing", icon: BatteryCharging },
+  { name: "FestGo Power", tagline: "Aproveita. Nós tratamos da bateria.", description: "Carregamento e guarda controlada do telemóvel, com registo e comprovativo.", benefit: "Mais bateria para aproveitares o evento.", status: "included", icon: BatteryCharging },
   { name: "FestGo Playlist", tagline: "A tua música faz parte da viagem.", description: "Sugere uma música na pré-reserva e ajuda-nos a criar o ambiente a bordo.", benefit: "Uma playlist feita com os passageiros.", status: "included", icon: Music2 },
   { name: "FestGo Quiz", tagline: "Uma viagem cheia de surpresas.", description: "Jogos, perguntas e pequenos desafios conduzidos pelo anfitrião FestGo.", benefit: "Diversão e brindes durante o caminho.", status: "included", icon: Sparkles },
   { name: "FestGo Care", tagline: "Pensámos nos pequenos detalhes.", description: "Papel higiénico, toalhitas e guardanapos disponíveis durante a experiência.", benefit: "Conforto quando mais precisas.", status: "included", icon: Heart },
@@ -29,7 +29,7 @@ const steps = [
 const questions = [
   ["O que está incluído nos 25.000 Kz?", "Ida e volta, Welcome Drink, actividades a bordo, FestGo Playlist, Quiz, Care e acompanhamento da equipa, conforme confirmação operacional."],
   ["O ingresso do Brunch Mangais está incluído?", "Não. O ingresso do evento é adquirido separadamente."],
-  ["Como funciona o FestGo Power?", "Está em preparação operacional. Quando confirmado, terá registo do equipamento, comprovativo e verificação na devolução, sem garantia absoluta contra perdas ou danos."],
+  ["Como funciona o FestGo Power?", "O serviço está confirmado e terá registo do equipamento, comprovativo e verificação na devolução, sem garantia absoluta contra perdas ou danos."],
   ["Posso sugerir músicas?", "Sim. Existe um campo opcional na pré-reserva para indicares o artista e a música."],
   ["Que entretenimento haverá?", "Playlist colaborativa, quiz, jogos, desafios e pequenos brindes, sujeitos à programação final."],
   ["Que actividades existem para crianças?", "Durante a viagem teremos actividades adequadas às idades, como desenhos, jogos de memória, histórias e desafios criativos."],

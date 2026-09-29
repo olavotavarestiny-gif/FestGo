@@ -81,13 +81,10 @@ export async function PATCH(
         data: {
           status: "PAYMENT_PENDING",
           contactStatus: "AWAITING_PAYMENT",
+          operationalConfirmed: true,
         },
       });
       if (!updated.count) return false;
-      await tx.seatPreference.updateMany({
-        where: { reservationId: id, releasedAt: null },
-        data: { status: "TEMPORARILY_HELD" },
-      });
       await tx.contactActivity.create({
         data: {
           reservationId: id,

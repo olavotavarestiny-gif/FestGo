@@ -207,13 +207,14 @@ export async function POST(
               eventId: reservation.eventId,
               reservationId: { not: reservation.id },
               seatNumber: { in: parsed.data.seats },
+              status: "CONFIRMED",
               releasedAt: null,
             },
             select: { seatNumber: true },
           });
           if (taken.length)
             throw new InvitationError(
-              "Um dos lugares acabou de ser escolhido. Selecciona outro.",
+              "Um dos lugares já foi confirmado. Selecciona outro.",
               409,
               taken.map((seat) => seat.seatNumber),
             );
@@ -262,7 +263,7 @@ export async function POST(
                 create: parsed.data.seats.map((seatNumber) => ({
                   eventId: reservation.eventId,
                   seatNumber,
-                  status: "TEMPORARILY_HELD",
+                  status: "PREFERRED",
                 })),
               },
             },

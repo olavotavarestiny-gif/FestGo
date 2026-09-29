@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Mail, Phone, Users } from "lucide-react";
 import { Logo } from "@/components/logo";
+import { DeleteCustomerButton } from "@/components/delete-customer-button";
 import { planLabels, reservationStatusLabels } from "@/lib/admin-reservations";
 import { requireStaff } from "@/lib/auth";
 import { formatKz } from "@/lib/data";
@@ -22,7 +23,10 @@ export default async function CustomerPage({
       reservations: {
         include: {
           event: { select: { name: true, eventDate: true } },
-          passengers: { orderBy: { fullName: "asc" } },
+          passengers: {
+            orderBy: { fullName: "asc" },
+            include: { ticket: { select: { id: true } } },
+          },
           seatPreferences: {
             where: { releasedAt: null },
             orderBy: { seatNumber: "asc" },
@@ -45,9 +49,20 @@ export default async function CustomerPage({
         },
         orderBy: { createdAt: "desc" },
       },
+      referralCodes: {
+        include: { redemptions: { select: { id: true } } },
+      },
     },
   });
   if (!customer) notFound();
+  const deletionProtected = customer.reservations.some(
+    (reservation) =>
+      !["LEAD", "PRE_RESERVED", "WAITLIST", "CANCELLED", "EXPIRED"].includes(
+        reservation.status,
+      ) ||
+      reservation.payments.length > 0 ||
+      reservation.passengers.some((passenger) => Boolean(passenger.ticket)),
+  ) || customer.referralCodes.some((code) => code.redemptions.length > 0);
 
   return (
     <main className="min-h-screen bg-[#100e17] p-4 text-white sm:p-6">
@@ -66,6 +81,7 @@ export default async function CustomerPage({
             <span className="inline-flex items-center gap-2 rounded-full bg-white/[.06] px-4 py-2"><Users size={15} /> {customer.reservations.length} reserva{customer.reservations.length === 1 ? "" : "s"}</span>
           </div>
           <p className="mt-4 text-xs text-white/35">Comunicações promocionais: {customer.marketingConsent ? "autorizadas" : "não autorizadas"}</p>
+          <DeleteCustomerButton customerId={customer.id} disabled={deletionProtected} />
         </section>
 
         <div className="mt-6 space-y-5">

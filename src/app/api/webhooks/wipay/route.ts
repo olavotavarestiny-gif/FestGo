@@ -177,12 +177,15 @@ export async function POST(request: Request) {
                 eventId: current.reservation.eventId,
                 reservationId: { not: current.reservationId },
                 seatNumber: { in: seatNumbers },
+                status: "CONFIRMED",
                 releasedAt: null,
               },
             })
           : 0;
         const seatsValid =
-          seatNumbers.length === current.reservation.quantity && conflicts === 0;
+          current.reservation.operationalConfirmed &&
+          seatNumbers.length === current.reservation.quantity &&
+          conflicts === 0;
         await tx.payment.update({
           where: { id: current.id },
           data: {

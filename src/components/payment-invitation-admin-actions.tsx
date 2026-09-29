@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { analyzeSms } from "@/lib/sms";
 
 type Invitation = {
   state: "ACTIVE" | "CONFIRMED" | "EXPIRED" | "REVOKED";
@@ -39,6 +40,12 @@ export function PaymentInvitationAdminActions({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [customMessage, setCustomMessage] = useState(preview?.content ?? "");
+  const [transactionReference, setTransactionReference] = useState("");
+
+  useEffect(() => {
+    if (preview?.content && !customMessage) setCustomMessage(preview.content);
+  }, [customMessage, preview?.content]);
 
   async function action(
     body: Record<string, unknown>,
@@ -58,6 +65,8 @@ export function PaymentInvitationAdminActions({
       const result = await response.json();
       setMessage(response.ok ? success : result.error ?? "Não foi possível concluir a acção.");
       if (response.ok) router.refresh();
+    } catch {
+      setMessage("Não foi possível comunicar com o servidor. Confirma a ligação e tenta novamente.");
     } finally {
       setBusy(false);
     }
@@ -67,6 +76,7 @@ export function PaymentInvitationAdminActions({
   const canUse = invitation && ["ACTIVE", "CONFIRMED"].includes(invitation.state);
   const sent = sms?.status === "SENT";
   const canRetry = (sms?.attempts ?? 0) < 3;
+  const customAnalysis = analyzeSms(customMessage);
 
   return (
     <section className="admin-action-card">
@@ -108,16 +118,28 @@ export function PaymentInvitationAdminActions({
 
           {preview && (
             <div className="mt-4">
-              <blockquote className="sms-preview">{preview.content}</blockquote>
+              <label className="gateway-test-field">
+                Mensagem SMS
+                <textarea
+                  className="min-h-32 resize-y py-3"
+                  maxLength={800}
+                  disabled={sent || busy}
+                  value={customMessage}
+                  onChange={(event) => setCustomMessage(event.target.value)}
+                />
+              </label>
+              <p className="mt-2 text-[10px] leading-4 text-white/40">
+                Podes escrever a mensagem e colar o link directo do gateway. O texto deve incluir um link HTTPS.
+              </p>
               <div className="sms-meta">
-                <span>{preview.characterCount} caracteres</span>
-                <span>{preview.encoding}</span>
-                <span>{preview.segments} segmentos</span>
+                <span>{customAnalysis.characterCount} caracteres</span>
+                <span>{customAnalysis.encoding}</span>
+                <span>{customAnalysis.segments} segmentos</span>
                 <span>{sms?.attempts ?? 0}/3 tentativas</span>
               </div>
-              {preview.segments > 1 && (
+              {customAnalysis.segments > 1 && (
                 <p className="sms-warning">
-                  Aviso de custo: esta mensagem usa {preview.segments} segmentos. O envio só acontece após confirmação manual.
+                  Aviso de custo: esta mensagem usa {customAnalysis.segments} segmentos. O envio só acontece após confirmação manual.
                 </p>
               )}
               {sms?.lastError && <p className="sms-warning">Última falha: {sms.lastError}</p>}
@@ -132,13 +154,14 @@ export function PaymentInvitationAdminActions({
                   onClick={() => {
                     if (
                       window.confirm(
-                        `Enviar este SMS agora? Custo estimado: ${preview.segments} segmentos.\n\n${preview.content}`,
+                        `Enviar este SMS agora? Custo estimado: ${customAnalysis.segments} segmentos.\n\n${customMessage}`,
                       )
                     )
                       void action(
                         {
                           action: "SEND_SMS",
-                          acknowledgeMultipleSegments: preview.segments > 1 || preview.encoding !== "GSM-7",
+                          content: customMessage,
+                          acknowledgeMultipleSegments: customAnalysis.segments > 1 || customAnalysis.encoding !== "GSM-7",
                         },
                         "Link aceite pela Ziett.",
                       );
@@ -149,6 +172,33 @@ export function PaymentInvitationAdminActions({
               )}
             </div>
           )}
+
+          <div className="mt-5 border-t border-white/10 pt-5">
+            <h3>Confirmar pagamento recebido</h3>
+            <p>Usa esta acção apenas depois de confirmares o movimento no portal ou na conta. Só então os lugares ficam ocupados e os bilhetes são emitidos.</p>
+            <label className="gateway-test-field mt-3">
+              Referência da transacção
+              <input
+                maxLength={160}
+                value={transactionReference}
+                onChange={(event) => setTransactionReference(event.target.value)}
+                placeholder="ID ou referência confirmada no gateway"
+              />
+            </label>
+            <button
+              className="admin-approve mt-3"
+              disabled={busy || transactionReference.trim().length < 4}
+              onClick={() => {
+                if (window.confirm("Confirmas que verificaste este pagamento? Esta acção ocupa os lugares e emite os bilhetes."))
+                  void action(
+                    { action: "CONFIRM_MANUAL_PAYMENT", transactionReference },
+                    "Pagamento confirmado, lugares ocupados e bilhetes emitidos.",
+                  );
+              }}
+            >
+              Confirmar pagamento e ocupar lugares
+            </button>
+          </div>
 
           <button
             className="admin-danger admin-secondary-action mt-4"
