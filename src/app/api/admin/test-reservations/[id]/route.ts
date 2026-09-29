@@ -8,6 +8,7 @@ import {
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { createWiPayPayment, WiPayError } from "@/lib/integrations/wipay";
 import {
   jsonObject,
   reconcileTestPayment,
@@ -80,6 +81,11 @@ export async function POST(
         limit: 360,
         windowMs: 60 * 60_000,
       });
+      if (reservation.payment.provider === "wipay")
+        return NextResponse.json({
+          ok: true,
+          ...resultFrom(reservation.payment),
+        });
       const result = reservation.payment.providerPaymentId
         ? await reconcileTestPayment(reservation.payment.id)
         : await recoverTestPayment(reservation.payment.id);
@@ -148,20 +154,71 @@ export async function POST(
           status: "CREATED",
           rawStatus: null,
           idempotencyKey: `festgo-test-${reservation.reference}-${crypto.randomUUID()}`,
-          method: parsed.data.method,
+          method: process.env.PAYMENTS_PROVIDER === "wipay" ? "hosted" : parsed.data.method,
+          provider: process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo",
         },
       })
     : await prisma.testPayment.create({
         data: {
           testReservationId: reservation.id,
           idempotencyKey: `festgo-test-${reservation.reference}-${crypto.randomUUID()}`,
-          productId: TEST_PRODUCT_ID,
-          method: parsed.data.method,
+          productId: process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay-sandbox" : TEST_PRODUCT_ID,
+          provider: process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo",
+          method: process.env.PAYMENTS_PROVIDER === "wipay" ? "hosted" : parsed.data.method,
           amount: TEST_AMOUNT,
           currency: TEST_CURRENCY,
         },
       });
   try {
+    if (process.env.PAYMENTS_PROVIDER === "wipay") {
+      const appUrl = new URL(
+        process.env.WIPAY_APP_URL ?? process.env.APP_URL ?? "https://festgo.mazanga.digital",
+      );
+      const referenceId = `festgo_test_${reservation.reference}_${crypto.randomUUID()}`;
+      await prisma.testPayment.update({
+        where: { id: payment.id },
+        data: { providerDetails: { referenceId } },
+      });
+      const returnUrl = new URL(
+        `/admin/teste-gateway/reserva/${reservation.accessToken}`,
+        appUrl,
+      );
+      const failureUrl = new URL(returnUrl);
+      failureUrl.searchParams.set("cancelled", "1");
+      const remote = await createWiPayPayment({
+        amount: TEST_AMOUNT,
+        currency: TEST_CURRENCY,
+        customerPhone: reservation.customerPhone.replace(/^\+244/, ""),
+        referenceId,
+        successUrl: returnUrl.toString(),
+        failureUrl: failureUrl.toString(),
+        callbackUrl: new URL("/api/webhooks/wipay-test", appUrl).toString(),
+      });
+      const details = { referenceId, paymentUrl: remote.checkoutUrl };
+      await prisma.$transaction([
+        prisma.testPayment.update({
+          where: { id: payment.id },
+          data: {
+            providerPaymentId: remote.paymentId,
+            providerDetails: details,
+            rawStatus: "checkout_created",
+            status: "PENDING",
+          },
+        }),
+        prisma.testReservation.update({
+          where: { id: reservation.id },
+          data: { status: "AWAITING_PAYMENT" },
+        }),
+      ]);
+      return NextResponse.json({
+        ok: true,
+        paymentId: remote.paymentId,
+        status: "PENDING",
+        amount: TEST_AMOUNT,
+        currency: TEST_CURRENCY,
+        ...details,
+      });
+    }
     const remote = await createPayment({
       productId: TEST_PRODUCT_ID,
       quantity: 1,
@@ -218,8 +275,10 @@ export async function POST(
     });
   } catch (error) {
     const providerError = error instanceof PaymentsApiError ? error : null;
+    const wipayError = error instanceof WiPayError ? error : null;
     const knownFailure =
-      Boolean(providerError?.status) && (providerError?.status ?? 500) < 500;
+      (Boolean(providerError?.status) && (providerError?.status ?? 500) < 500) ||
+      (Boolean(wipayError?.status) && (wipayError?.status ?? 500) < 500);
     await prisma.$transaction([
       prisma.testPayment.update({
         where: { id: payment.id },
@@ -241,7 +300,7 @@ export async function POST(
           metadata: {
             providerPaymentId: storedProviderPaymentId,
             diagnosticCode: providerError?.diagnosticCode ?? "UNEXPECTED_ERROR",
-            providerStatus: providerError?.status ?? null,
+            providerStatus: providerError?.status ?? wipayError?.status ?? null,
           },
           ipAddress: clientIp(request),
         },
@@ -250,8 +309,8 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          providerError
-            ? providerError.message
+          providerError || wipayError
+            ? (providerError ?? wipayError)!.message
             : "Não foi possível iniciar o pagamento de teste.",
       },
       { status: knownFailure ? 502 : 202 },

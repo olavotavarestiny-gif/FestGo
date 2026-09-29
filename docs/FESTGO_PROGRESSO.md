@@ -111,8 +111,11 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - WiPay Fase 2: 42/42 testes sem base aprovados e 6/6 fluxos WiPay aprovados numa PostgreSQL 16 isolada com as sete migrações e seed.
 - Cobertos: OAuth simulado, valor calculado no servidor, redireccionamento 303, domínio oficial, assinatura válida/inválida, callback repetido, valor divergente, rejeição, callback antecipado antes da persistência do ID, evento tardio contraditório, indisponibilidade de lugares e emissão única.
 - `npm run typecheck`, `git diff --check` e `npm run build` aprovados. Os testes não contactaram a WiPay, não criaram cobranças e não enviaram SMS.
+- Teste administrativo WiPay: 7/7 fluxos integrados aprovados numa PostgreSQL isolada, incluindo callback sandbox de 100 Kz, repetição e emissão única de bilhete TESTE. Build com `/api/webhooks/wipay-test` aprovado.
 - Credenciais locais de sandbox validadas directamente no endpoint OAuth oficial: scopes `payment` e `signature` responderam HTTP 200, com validades de 3.600 e 86.400 segundos. Nenhum checkout ou pagamento foi criado.
 - A WiPay aceita `WIPAY_APP_URL` para definir exclusivamente os URLs de retorno e callback, preservando a variável histórica `APP_URL` das restantes integrações.
+- O fluxo administrativo isolado de 100 Kz suporta agora WiPay sandbox: cria a cobrança apenas após confirmação do administrador, recebe-a em `/api/webhooks/wipay-test`, valida a assinatura e emite exclusivamente um bilhete TESTE sem ocupar lugares ou criar reservas oficiais.
+- O webhook sandbox é idempotente, confirma o valor fixo de 100 AOA, moeda, identificador e referência, e não permite que uma rejeição tardia reverta uma confirmação já aceite.
 
 ## Problemas encontrados
 

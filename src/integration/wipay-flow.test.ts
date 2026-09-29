@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as wipayCallback } from "@/app/api/webhooks/wipay/route";
+import { POST as wipayTestCallback } from "@/app/api/webhooks/wipay-test/route";
 import { resetWiPayTokenCacheForTests } from "@/lib/integrations/wipay";
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
@@ -205,5 +206,69 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     expect(await prisma.ticket.count({
       where: { passenger: { reservationId: prepared.reservation.id } },
     })).toBe(0);
+  });
+
+  it("confirms an isolated 100 Kz sandbox payment and emits one test ticket", async () => {
+    const suffix = randomUUID();
+    const user = await prisma.user.create({
+      data: {
+        email: `wipay-test-${suffix}@example.test`,
+        name: "Admin WiPay Test",
+        passwordHash: "test",
+        role: "ADMIN",
+      },
+    });
+    const reservation = await prisma.testReservation.create({
+      data: {
+        reference: `TESTE-${suffix.slice(0, 8)}`,
+        plan: "INDIVIDUAL",
+        passengerName: "Passageiro Sandbox",
+        customerEmail: "sandbox@example.test",
+        customerPhone: "+244900000000",
+        testSeat: "TESTE-01",
+        pickupPreference: "Primeiro de Maio",
+        createdById: user.id,
+      },
+    });
+    const providerPaymentId = randomUUID();
+    const referenceId = `festgo_test_${suffix}`;
+    const payment = await prisma.testPayment.create({
+      data: {
+        testReservationId: reservation.id,
+        provider: "wipay",
+        providerPaymentId,
+        idempotencyKey: `test-payment-${suffix}`,
+        productId: "wipay-sandbox",
+        method: "hosted",
+        status: "PENDING",
+        amount: 100,
+        currency: "AOA",
+        providerDetails: { referenceId },
+      },
+    });
+    const payload = {
+      id: providerPaymentId,
+      amount: "100.00",
+      status: "accepted",
+      status_reason: "2000",
+      status_datetime: new Date().toISOString(),
+      currency: "aoa",
+      customer: "900000000",
+      reference_id: referenceId,
+      processor: "gpo",
+    };
+    const first = await wipayTestCallback(callbackRequest(payload));
+    expect(first.status).toBe(200);
+    expect((await prisma.testPayment.findUniqueOrThrow({
+      where: { id: payment.id },
+    })).status).toBe("SUCCEEDED");
+    expect(await prisma.testTicket.count({
+      where: { testReservationId: reservation.id },
+    })).toBe(1);
+    const duplicate = await wipayTestCallback(callbackRequest(payload));
+    expect(await duplicate.json()).toMatchObject({ duplicate: true });
+    expect(await prisma.testTicket.count({
+      where: { testReservationId: reservation.id },
+    })).toBe(1);
   });
 });

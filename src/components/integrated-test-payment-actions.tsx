@@ -9,11 +9,13 @@ export function IntegratedTestPaymentActions({
   paymentExists,
   paid,
   initialPaymentUrl,
+  paymentProvider,
 }: {
   reservationId: string;
   paymentExists: boolean;
   paid: boolean;
   initialPaymentUrl: string | null;
+  paymentProvider: "wipay" | "paygo";
 }) {
   const router = useRouter();
   const [method, setMethod] = useState<"multicaixa" | "reference">("multicaixa");
@@ -63,7 +65,7 @@ export function IntegratedTestPaymentActions({
         throw new Error(result.error ?? "Não foi possível concluir a operação.");
       if (result.paymentUrl) setPaymentUrl(result.paymentUrl);
       if (result.reference && typeof result.reference === "object") setReference(result.reference);
-      setMessage(body.action === "RECONCILE" ? `Estado consultado: ${result.status}.` : "Cobrança de 100 Kz criada no gateway.");
+      setMessage(body.action === "RECONCILE" ? `Estado consultado: ${result.status}.` : `Cobrança sandbox de 100 Kz criada na ${paymentProvider === "wipay" ? "WiPay" : "gateway"}.`);
       router.refresh();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Falha na operação.");
@@ -76,13 +78,13 @@ export function IntegratedTestPaymentActions({
     <div className="space-y-4">
       {!paymentExists && !paid && (
         <>
-          <label className="gateway-test-field">Método<select value={method} onChange={(event) => setMethod(event.target.value as typeof method)}><option value="multicaixa">Multicaixa / Express</option><option value="reference">Referência</option></select></label>
+          {paymentProvider === "paygo" && <label className="gateway-test-field">Método<select value={method} onChange={(event) => setMethod(event.target.value as typeof method)}><option value="multicaixa">Multicaixa / Express</option><option value="reference">Referência</option></select></label>}
           <button className="btn-primary w-full" disabled={busy} onClick={() => {
-            if (window.confirm("Criar agora a cobrança real e isolada de 100 Kz?")) void action({ action: "START_PAYMENT", method, confirmation: true });
-          }}>{busy ? "A comunicar…" : "Pagar 100 Kz"}</button>
+            if (window.confirm(`Criar agora a cobrança ${paymentProvider === "wipay" ? "sandbox" : "real e isolada"} de 100 Kz?`)) void action({ action: "START_PAYMENT", method, confirmation: true });
+          }}>{busy ? "A comunicar…" : `Pagar 100 Kz${paymentProvider === "wipay" ? " no sandbox WiPay" : ""}`}</button>
         </>
       )}
-      {paymentUrl && <a className="btn-primary w-full" href={paymentUrl} target="_blank" rel="noreferrer">Abrir checkout real <ExternalLink size={16} /></a>}
+      {paymentUrl && <a className="btn-primary w-full" href={paymentUrl} target="_blank" rel="noreferrer">Abrir checkout {paymentProvider === "wipay" ? "sandbox" : "real"} <ExternalLink size={16} /></a>}
       {reference?.entity && <div className="rounded-xl bg-white/[.05] p-4 text-xs"><p>Entidade: <b>{reference.entity}</b></p><p className="mt-2">Referência: <b>{reference.reference_number}</b></p></div>}
       {paymentExists && !paid && <button className="btn-secondary w-full" disabled={busy} onClick={() => action({ action: "RECONCILE" })}><RefreshCw size={16} /> Consultar gateway</button>}
       {message && <p className="rounded-xl bg-white/[.05] p-3 text-xs text-white/65" role="status">{message}</p>}

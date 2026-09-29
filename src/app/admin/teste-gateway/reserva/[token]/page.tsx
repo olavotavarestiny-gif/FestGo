@@ -30,6 +30,7 @@ export default async function IntegratedTestPage({
   const details = jsonObject(reservation.payment?.providerDetails ?? null);
   const paymentUrl = typeof details.paymentUrl === "string" ? details.paymentUrl : null;
   const lastWebhook = reservation.payment?.webhookEvents[0];
+  const paymentProvider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
 
   return (
     <main className="min-h-screen bg-[#100e17] p-4 text-white sm:p-6">
@@ -46,7 +47,7 @@ export default async function IntegratedTestPage({
               <div><dt>Lugar fictício</dt><dd>{reservation.testSeat}</dd></div>
               <div><dt>Ponto de recolha</dt><dd>{reservation.pickupPreference}</dd></div>
               <div><dt>Valor exclusivo deste teste</dt><dd>{formatKz(TEST_AMOUNT)}</dd></div>
-              <div><dt>Produto fixo</dt><dd className="break-all">{TEST_PRODUCT_ID}</dd></div>
+              <div><dt>Produto fixo</dt><dd className="break-all">{paymentProvider === "wipay" ? "WiPay Sandbox" : TEST_PRODUCT_ID}</dd></div>
               <div><dt>Estado</dt><dd>{reservation.status}</dd></div>
               {reservation.payment?.providerPaymentId && <div><dt>Transacção</dt><dd className="break-all">{reservation.payment.providerPaymentId}</dd></div>}
               {lastWebhook && <div><dt>Último webhook</dt><dd>{lastWebhook.signatureValid ? "Assinatura válida" : "Assinatura inválida"} · {lastWebhook.processedAt ? "processado" : "pendente"}</dd></div>}
@@ -57,7 +58,7 @@ export default async function IntegratedTestPage({
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet/15 text-violet-300"><ShieldCheck size={21} /></span>
             <h2 className="mt-5 font-black">Pagamento integrado</h2>
             <p className="mt-2 text-xs leading-5 text-white/40">A cobrança só é criada depois da tua confirmação. O valor vem exclusivamente do servidor.</p>
-            <div className="mt-5"><IntegratedTestPaymentActions reservationId={reservation.id} paymentExists={Boolean(reservation.payment)} paid={reservation.status === "PAID"} initialPaymentUrl={paymentUrl} /></div>
+            <div className="mt-5"><IntegratedTestPaymentActions reservationId={reservation.id} paymentExists={Boolean(reservation.payment)} paid={reservation.status === "PAID"} initialPaymentUrl={paymentUrl} paymentProvider={paymentProvider} /></div>
           </aside>
         </div>
       </div>
