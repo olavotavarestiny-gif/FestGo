@@ -112,6 +112,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - Cobertos: OAuth simulado, valor calculado no servidor, redireccionamento 303, domínio oficial, assinatura válida/inválida, callback repetido, valor divergente, rejeição, callback antecipado antes da persistência do ID, evento tardio contraditório, indisponibilidade de lugares e emissão única.
 - `npm run typecheck`, `git diff --check` e `npm run build` aprovados. Os testes não contactaram a WiPay, não criaram cobranças e não enviaram SMS.
 - Credenciais locais de sandbox validadas directamente no endpoint OAuth oficial: scopes `payment` e `signature` responderam HTTP 200, com validades de 3.600 e 86.400 segundos. Nenhum checkout ou pagamento foi criado.
+- A WiPay aceita `WIPAY_APP_URL` para definir exclusivamente os URLs de retorno e callback, preservando a variável histórica `APP_URL` das restantes integrações.
 
 ## Problemas encontrados
 

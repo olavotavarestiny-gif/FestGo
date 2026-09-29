@@ -31,6 +31,11 @@ function configuration() {
     const url = new URL(process.env.WIPAY_API_URL ?? "https://api.wipay.ao");
     wipayEndpoint = url.protocol === "https:" && url.hostname === "api.wipay.ao";
   } catch {}
+  let wipayAppUrl = false;
+  try {
+    const url = new URL(process.env.WIPAY_APP_URL ?? process.env.APP_URL ?? "");
+    wipayAppUrl = url.protocol === "https:";
+  } catch {}
   return {
     authSecret: configured("AUTH_SECRET", 32),
     cronSecret: configured("CRON_SECRET", 32),
@@ -54,6 +59,7 @@ function configuration() {
         configured("Webhook_secret", 32),
       wipay: {
         endpoint: wipayEndpoint,
+        appUrl: wipayAppUrl,
         environment: ["sandbox", "production"].includes(
           process.env.WIPAY_ENVIRONMENT ?? "",
         ),

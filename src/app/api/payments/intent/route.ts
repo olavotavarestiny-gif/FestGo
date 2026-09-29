@@ -133,7 +133,9 @@ export async function POST(request: Request) {
     const total = Number(reservation.totalAmount);
     if (provider === "wipay") {
       const appUrl = new URL(
-        process.env.APP_URL ?? "https://festgo.mazanga.digital",
+        process.env.WIPAY_APP_URL ??
+          process.env.APP_URL ??
+          "https://festgo.mazanga.digital",
       );
       if (appUrl.protocol !== "https:" && process.env.NODE_ENV !== "test")
         return NextResponse.json(
