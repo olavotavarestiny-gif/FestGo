@@ -12,6 +12,7 @@ import { POST as managePaymentInvitation } from "@/app/api/admin/payment-invitat
 import { POST as updatePaymentInvitation } from "@/app/api/payment-invitations/[token]/route";
 import { POST as createGatewayTestPayment } from "@/app/api/admin/payment-test/route";
 import { DELETE as deleteCustomer } from "@/app/api/admin/customers/[id]/route";
+import { DELETE as deleteCustomersBulk } from "@/app/api/admin/customers/bulk/route";
 import {
   GET as inspectTicket,
   POST as validateTicket,
@@ -864,5 +865,61 @@ describe.skipIf(!enabled)("production database flows", () => {
     );
     expect(removed.status).toBe(200);
     expect(await prisma.customer.findUnique({ where: { id: customer.id } })).toBeNull();
+
+    const event = await prisma.event.findUniqueOrThrow({
+      where: { slug: "brunch-mangais" },
+    });
+    const [first, second, protectedCustomer] = await Promise.all([
+      prisma.customer.create({
+        data: {
+          fullName: "Contacto eliminável um",
+          phone: `+24491${Math.floor(1000000 + Math.random() * 8999999)}`,
+        },
+      }),
+      prisma.customer.create({
+        data: {
+          fullName: "Contacto eliminável dois",
+          phone: `+24491${Math.floor(1000000 + Math.random() * 8999999)}`,
+        },
+      }),
+      prisma.customer.create({
+        data: {
+          fullName: "Contacto protegido",
+          phone: `+24491${Math.floor(1000000 + Math.random() * 8999999)}`,
+          reservations: {
+            create: {
+              reference: `PROTECTED-${randomUUID()}`,
+              eventId: event.id,
+              status: "PAYMENT_PENDING",
+              quantity: 1,
+              unitPrice: 25_000,
+              totalAmount: 25_000,
+              idempotencyKey: randomUUID(),
+            },
+          },
+        },
+      }),
+    ]);
+    const bulk = await deleteCustomersBulk(
+      new Request("http://localhost/api/admin/customers/bulk", {
+        method: "DELETE",
+        headers: {
+          "content-type": "application/json",
+          cookie: `festgo_session=${session}`,
+        },
+        body: JSON.stringify({ ids: [first.id, second.id, protectedCustomer.id] }),
+      }),
+    );
+    expect(bulk.status).toBe(200);
+    expect(await bulk.json()).toMatchObject({
+      customersDeleted: 2,
+      skipped: 1,
+    });
+    expect(await prisma.customer.count({
+      where: { id: { in: [first.id, second.id] } },
+    })).toBe(0);
+    expect(await prisma.customer.findUnique({
+      where: { id: protectedCustomer.id },
+    })).not.toBeNull();
   });
 });

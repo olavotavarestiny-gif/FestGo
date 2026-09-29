@@ -2,14 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { staffFromRequest } from "@/lib/auth";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
-
-const deletableStatuses = new Set([
-  "LEAD",
-  "PRE_RESERVED",
-  "WAITLIST",
-  "CANCELLED",
-  "EXPIRED",
-]);
+import {
+  deleteCustomerRecords,
+  deletableCustomerWhere,
+  lockCustomerDeletionTargets,
+} from "@/lib/admin-customer-deletion";
 
 export async function DELETE(
   request: Request,
@@ -33,31 +30,28 @@ export async function DELETE(
     );
   }
 
-  const customer = await prisma.customer.findUnique({
-    where: { id },
-    include: {
-      reservations: {
-        include: {
-          payments: { select: { id: true } },
-          passengers: { include: { ticket: { select: { id: true } } } },
-        },
-      },
-      referralCodes: {
-        include: { redemptions: { select: { id: true } } },
-      },
-    },
-  });
+  const customer = await prisma.customer.findUnique({ where: { id }, select: { id: true } });
   if (!customer)
     return NextResponse.json({ error: "Contacto não encontrado." }, { status: 404 });
-
-  const protectedRecord =
-    customer.reservations.some(
-      (reservation) =>
-        !deletableStatuses.has(reservation.status) ||
-        reservation.payments.length > 0 ||
-        reservation.passengers.some((passenger) => passenger.ticket),
-    ) || customer.referralCodes.some((code) => code.redemptions.length > 0);
-  if (protectedRecord)
+  const result = await prisma.$transaction(async (tx) => {
+    await lockCustomerDeletionTargets(tx, [id]);
+    const eligible = await tx.customer.count({
+      where: { id, ...deletableCustomerWhere },
+    });
+    if (!eligible) return null;
+    const deleted = await deleteCustomerRecords(tx, [id]);
+    await tx.auditLog.create({
+      data: {
+        userId: user.id,
+        action: "UNCONVERTED_CONTACT_DELETED",
+        entityType: "Customer",
+        metadata: { reservationsDeleted: deleted.reservationsDeleted },
+        ipAddress: clientIp(request),
+      },
+    });
+    return deleted;
+  });
+  if (!result)
     return NextResponse.json(
       {
         error:
@@ -65,32 +59,5 @@ export async function DELETE(
       },
       { status: 409 },
     );
-
-  const reservationIds = customer.reservations.map((reservation) => reservation.id);
-  await prisma.$transaction(async (tx) => {
-    if (reservationIds.length) {
-      await tx.notification.deleteMany({
-        where: { reservationId: { in: reservationIds } },
-      });
-      await tx.cRMIntegrationJob.deleteMany({
-        where: { reservationId: { in: reservationIds } },
-      });
-      await tx.referralRedemption.deleteMany({
-        where: { reservationId: { in: reservationIds } },
-      });
-      await tx.reservation.deleteMany({ where: { id: { in: reservationIds } } });
-    }
-    await tx.referralCode.deleteMany({ where: { customerId: id } });
-    await tx.customer.delete({ where: { id } });
-    await tx.auditLog.create({
-      data: {
-        userId: user.id,
-        action: "UNCONVERTED_CONTACT_DELETED",
-        entityType: "Customer",
-        metadata: { reservationsDeleted: reservationIds.length },
-        ipAddress: clientIp(request),
-      },
-    });
-  });
   return NextResponse.json({ ok: true });
 }

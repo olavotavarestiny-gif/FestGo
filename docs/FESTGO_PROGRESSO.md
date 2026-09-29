@@ -66,6 +66,8 @@ Fase concluída neste ciclo: **Operação manual de pagamentos, lugares e contac
 - O painel permite editar uma mensagem SMS, colar um link HTTPS directo de pagamento, pré-visualizar caracteres/codificação/segmentos e enviar manualmente através da Ziett, mantendo os limites e a prevenção de duplicados existentes.
 - A quantidade de bilhetes no formulário é agora escolhida numa lista, evitando o problema do valor `1` que não podia ser apagado em alguns telemóveis.
 - Contactos sem pagamentos, bilhetes ou histórico comercial protegido podem ser eliminados por um administrador após confirmação escrita. Reservas e dados dependentes não convertidos são removidos na mesma transacção.
+- O painel permite seleccionar todos os contactos elimináveis da página e apagá-los numa única operação. Registos protegidos ficam desactivados, são novamente validados no servidor e nunca são removidos pelo lote.
+- A interface administrativa para computador usa agora a largura disponível para a tabela principal, filtros alinhados em grelha, métricas mais compactas e painéis auxiliares abaixo da listagem.
 - FestGo Power passou de “em preparação” para serviço confirmado na landing e na FAQ. Não foram adicionadas imagens geradas.
 
 ## Ficheiros modificados
@@ -81,6 +83,7 @@ Fase concluída neste ciclo: **Operação manual de pagamentos, lugares e contac
 - Quantidades flexíveis: `src/lib/pre-reservations.ts`, formulário de reserva, convite personalizado, APIs de pré-reserva/convite, painel, CSV, esquema Prisma e migração aditiva.
 - WiPay Fase 2: `src/lib/integrations/wipay.ts`, `src/app/api/webhooks/wipay/route.ts`, APIs de intenção/estado/saúde, convite de pagamento, `.env.example` e testes unitários/integrados dedicados.
 - Operação manual: APIs de convite/pagamento e eliminação de contactos, acções administrativas, formulário de quantidade, regras de ocupação dos lugares, callbacks/reconciliação e testes de integração actualizados.
+- Gestão em lote: API administrativa de eliminação múltipla, regras partilhadas de protecção, barra de selecção e tabela desktop simplificada.
 
 ## Migrações aplicadas
 
