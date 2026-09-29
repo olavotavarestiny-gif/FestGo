@@ -180,6 +180,17 @@ export async function POST(
       const appUrl = new URL(
         process.env.WIPAY_APP_URL ?? process.env.APP_URL ?? "https://festgo.mazanga.digital",
       );
+      const callbackOrigin = new URL(
+        process.env.WIPAY_CALLBACK_ORIGIN ?? appUrl.origin,
+      );
+      if (
+        appUrl.protocol !== "https:" ||
+        callbackOrigin.protocol !== "https:"
+      )
+        return NextResponse.json(
+          { error: "Os dominios seguros da WiPay nao estao configurados." },
+          { status: 503 },
+        );
       const referenceId = `festgo_test_${reservation.reference}_${crypto.randomUUID()}`;
       await prisma.testPayment.update({
         where: { id: payment.id },
@@ -198,7 +209,10 @@ export async function POST(
         referenceId,
         successUrl: returnUrl.toString(),
         failureUrl: failureUrl.toString(),
-        callbackUrl: new URL("/api/webhooks/wipay-test", appUrl).toString(),
+        callbackUrl: new URL(
+          "/api/webhooks/wipay-test",
+          callbackOrigin,
+        ).toString(),
       });
       const details = { referenceId, paymentUrl: remote.checkoutUrl };
       await prisma.$transaction([

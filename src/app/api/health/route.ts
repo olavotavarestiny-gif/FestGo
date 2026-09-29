@@ -36,6 +36,16 @@ function configuration() {
     const url = new URL(process.env.WIPAY_APP_URL ?? process.env.APP_URL ?? "");
     wipayAppUrl = url.protocol === "https:";
   } catch {}
+  let wipayCallbackOrigin = false;
+  try {
+    const url = new URL(
+      process.env.WIPAY_CALLBACK_ORIGIN ??
+        process.env.WIPAY_APP_URL ??
+        process.env.APP_URL ??
+        "",
+    );
+    wipayCallbackOrigin = url.protocol === "https:";
+  } catch {}
   return {
     authSecret: configured("AUTH_SECRET", 32),
     cronSecret: configured("CRON_SECRET", 32),
@@ -60,6 +70,7 @@ function configuration() {
       wipay: {
         endpoint: wipayEndpoint,
         appUrl: wipayAppUrl,
+        callbackOrigin: wipayCallbackOrigin,
         environment: ["sandbox", "production"].includes(
           process.env.WIPAY_ENVIRONMENT ?? "",
         ),

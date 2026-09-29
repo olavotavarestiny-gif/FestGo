@@ -149,6 +149,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - A integração passou a registar códigos de diagnóstico seguros e específicos para autenticação, HTTP, ausência de `Location`, domínio, ID, nonce e timeout, sem guardar tokens ou credenciais.
 - O diagnóstico `CHECKOUT_HOST_INVALID` comprovou que a resposta real usa um subdomínio WiPay diferente do exemplo `hosted.wipay.ao`. A allowlist continua restrita a HTTPS, mas aceita agora o domínio oficial `wipay.ao` e os seus subdomínios, rejeitando qualquer domínio externo ou sufixo enganador.
 - O segundo diagnóstico identificou o hostname real `pay.wiza.ao`. A allowlist passou a aceitar exactamente esse host da Wiza, sem autorizar genericamente outros subdomínios `*.wiza.ao`.
+- Um pagamento sandbox de 100 AOA foi confirmado no portal WiPay como aceite (`2000`), mas os logs Vercel provaram ausência total de tentativa de entrega do callback. `WIPAY_CALLBACK_ORIGIN` permite agora manter o checkout/painel no Preview e enviar callbacks para o domínio estável de produção, sem activar vendas ou pagamentos públicos.
 
 ## Operação de contas administrativas
 

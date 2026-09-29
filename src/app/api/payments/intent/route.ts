@@ -142,6 +142,14 @@ export async function POST(request: Request) {
           { error: "O domínio seguro da FestGo não está configurado." },
           { status: 503 },
         );
+      const callbackOrigin = new URL(
+        process.env.WIPAY_CALLBACK_ORIGIN ?? appUrl.origin,
+      );
+      if (callbackOrigin.protocol !== "https:" && process.env.NODE_ENV !== "test")
+        return NextResponse.json(
+          { error: "O domínio seguro do callback WiPay não está configurado." },
+          { status: 503 },
+        );
       const referenceId = `festgo_${reservation.reference.replace(/[^A-Za-z0-9_-]/g, "_")}_${crypto.randomUUID()}`;
       payment = await prisma.payment.create({
         data: {
@@ -169,7 +177,7 @@ export async function POST(request: Request) {
           referenceId,
           successUrl: resultUrl.toString(),
           failureUrl: failureUrl.toString(),
-          callbackUrl: new URL("/api/webhooks/wipay", appUrl).toString(),
+          callbackUrl: new URL("/api/webhooks/wipay", callbackOrigin).toString(),
         });
         const details = {
           environment: process.env.WIPAY_ENVIRONMENT,
