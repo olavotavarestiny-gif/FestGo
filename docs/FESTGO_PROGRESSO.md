@@ -111,6 +111,7 @@ Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbo
 - WiPay Fase 2: 42/42 testes sem base aprovados e 6/6 fluxos WiPay aprovados numa PostgreSQL 16 isolada com as sete migrações e seed.
 - Cobertos: OAuth simulado, valor calculado no servidor, redireccionamento 303, domínio oficial, assinatura válida/inválida, callback repetido, valor divergente, rejeição, callback antecipado antes da persistência do ID, evento tardio contraditório, indisponibilidade de lugares e emissão única.
 - `npm run typecheck`, `git diff --check` e `npm run build` aprovados. Os testes não contactaram a WiPay, não criaram cobranças e não enviaram SMS.
+- Credenciais locais de sandbox validadas directamente no endpoint OAuth oficial: scopes `payment` e `signature` responderam HTTP 200, com validades de 3.600 e 86.400 segundos. Nenhum checkout ou pagamento foi criado.
 
 ## Problemas encontrados
 
