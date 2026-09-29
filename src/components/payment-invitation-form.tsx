@@ -31,6 +31,7 @@ export function PaymentInvitationForm({
   eventDate,
   minorAgeLimit,
   paymentsEnabled,
+  paymentProvider,
 }: {
   token: string;
   eventName: string;
@@ -48,6 +49,7 @@ export function PaymentInvitationForm({
   eventDate: string;
   minorAgeLimit: number;
   paymentsEnabled: boolean;
+  paymentProvider: "wipay" | "paygo";
 }) {
   const [quantity, setQuantity] = useState(initialQuantity);
   const [passengers, setPassengers] = useState<PassengerInput[]>(() =>
@@ -218,10 +220,10 @@ export function PaymentInvitationForm({
             {error && <p className="pre-error" role="alert">{error}</p>}
             {success && <div className="invite-success" role="status"><Check size={18} /> {success}</div>}
             <button className="home-cta mt-6" type="button" disabled={busy || !valid} onClick={confirm}>{busy ? "A guardar…" : "Confirmar bilhetes e dados"}</button>
-            {paymentAccess && <button className="home-cta mt-3" type="button" disabled={paymentBusy} onClick={payWithExpress}>{paymentBusy ? "A iniciar…" : `Pagar ${formatKz(pricing.total)} com Multicaixa Express`}</button>}
+            {paymentAccess && <button className="home-cta mt-3" type="button" disabled={paymentBusy} onClick={payWithExpress}>{paymentBusy ? "A iniciar…" : `Pagar ${formatKz(pricing.total)} com ${paymentProvider === "wipay" ? "WiPay" : "Multicaixa Express"}`}</button>}
           </div>
         </section>
-        <aside className="pre-aside"><span className="pre-aside-icon"><Users size={20} /></span><small>Resumo actualizado</small><h2>{quantity} passageiro{quantity === 1 ? "" : "s"}</h2><strong>{formatKz(pricing.total)}</strong><p>{pricingLabel(pricing.composition)} · ida e volta</p><hr /><p className="pre-aside-note">{paymentsEnabled ? "Pagamento disponível exclusivamente por Multicaixa Express." : "Pagamentos reais continuam desactivados. A FestGo enviará as instruções quando esta fase estiver disponível."}</p></aside>
+        <aside className="pre-aside"><span className="pre-aside-icon"><Users size={20} /></span><small>Resumo actualizado</small><h2>{quantity} passageiro{quantity === 1 ? "" : "s"}</h2><strong>{formatKz(pricing.total)}</strong><p>{pricingLabel(pricing.composition)} · ida e volta</p><hr /><p className="pre-aside-note">{paymentsEnabled ? `Pagamento disponível através da ${paymentProvider === "wipay" ? "WiPay" : "Multicaixa Express"}.` : "Pagamentos reais continuam desactivados. A FestGo enviará as instruções quando esta fase estiver disponível."}</p></aside>
       </div>
     </main>
   );

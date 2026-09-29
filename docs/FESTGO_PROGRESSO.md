@@ -1,7 +1,7 @@
 # FestGO — Progresso
 
 Última actualização: 29 de Setembro de 2026
-Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de crianças**
+Fase concluída neste ciclo: **Fase 2 — integração WiPay preparada em sandbox**
 
 ## Funcionalidades concluídas
 
@@ -52,6 +52,15 @@ Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de
 - Nome e data de nascimento são obrigatórios para novos passageiros. A idade é calculada na data do evento e reservas com menores exigem nome e telefone do adulto responsável.
 - Registos antigos sem nascimento permanecem intactos e precisam de completar os dados no convite antes do pagamento.
 - O painel privado apresenta adultos, menores, idades, responsável, lugares, recolha e valor, com filtro e exportação para reservas com menores.
+- Adaptador WiPay implementado sobre o host oficial `api.wipay.ao`, com OAuth2 por `client_credentials`, cache separado dos tokens `payment` e `signature` e validação estrita do checkout `hosted.wipay.ao`.
+- Criação do checkout usa exclusivamente o valor, moeda, telefone e referência calculados no servidor; o identificador WiPay é persistido antes de o URL ser devolvido ao cliente.
+- Callback dedicado em `/api/webhooks/wipay`, validado com HMAC-SHA-256 hexadecimal sobre o corpo HTTP original antes de qualquer alteração à base de dados.
+- Associação do callback exige identificador, referência imprevisível, valor e moeda; callbacks repetidos são idempotentes e eventos contraditórios não revertem pagamentos já confirmados.
+- Confirmação aceita emite bilhetes uma única vez apenas quando todos os lugares continuam válidos. Pagamentos confirmados sem lugares disponíveis ficam em `PAYMENT_UNCERTAIN`, sem bilhete automático.
+- Rejeição autenticada liberta a retenção e expira a reserva, sem afectar uma reserva que já esteja paga.
+- O provedor anterior permanece disponível por `PAYMENTS_PROVIDER=paygo` para rollback. A WiPay é seleccionada apenas com `PAYMENTS_PROVIDER=wipay`.
+- O estado público consulta apenas o estado local da WiPay: a documentação recebida não define um endpoint autoritativo de consulta, cancelamento ou reembolso, por isso não foi criada uma reconciliação especulativa.
+- Pagamentos e vendas públicas continuam desactivados; nenhuma credencial, cobrança real ou configuração externa foi alterada.
 
 ## Ficheiros modificados
 
@@ -64,6 +73,7 @@ Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de
 - Fase 3: modelo e API de convites, página `/confirmar/[token]`, formulário personalizado, controlo administrativo, tokens assinados e testes de integração.
 - Teste integrado: modelos Prisma isolados, APIs administrativas de reserva/pagamento e bilhete, tratamento de webhook, páginas em `/admin/teste-gateway`, componentes do fluxo e teste de integração dedicado.
 - Quantidades flexíveis: `src/lib/pre-reservations.ts`, formulário de reserva, convite personalizado, APIs de pré-reserva/convite, painel, CSV, esquema Prisma e migração aditiva.
+- WiPay Fase 2: `src/lib/integrations/wipay.ts`, `src/app/api/webhooks/wipay/route.ts`, APIs de intenção/estado/saúde, convite de pagamento, `.env.example` e testes unitários/integrados dedicados.
 
 ## Migrações aplicadas
 
@@ -74,6 +84,7 @@ Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de
 - `20260928190000_payment_invitations`: adiciona um convite individual por reserva, com nonce, expiração, confirmação, revogação e administrador criador. É aditiva e não cria pagamentos.
 - `20260928210000_integrated_gateway_test`: cria apenas `TestReservation`, `TestPayment`, `TestPaymentWebhookEvent`, `TestTicket` e `TestTicketValidation`. A migração é aditiva e não referencia lugares nem reservas oficiais.
 - `20260929120000_flexible_ticket_quantities`: adiciona preços configuráveis e limite etário ao evento; composição, contagem de menores e responsável à reserva; nascimento, idade e classificação ao passageiro. Todos os novos campos preservam dados antigos.
+- A Fase 2 WiPay não exige nova migração; reutiliza os registos existentes de pagamentos, eventos de webhook, reservas, lugares e bilhetes.
 
 ## Testes realizados
 
@@ -97,6 +108,9 @@ Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de
 - Preparação do lançamento: `git diff --check`, `npm run typecheck`, 12/12 testes focados no gateway e `npm run build` aprovados. Nenhuma cobrança ou SMS real foi efectuado.
 - Quantidades flexíveis: 39/39 testes sem base e 6/6 fluxos numa PostgreSQL 16 isolada. Cobertos preços de 1 a 8, capacidade, concorrência de lugares, adulto/menor, responsável, alteração pelo convite e preservação do fluxo administrativo.
 - As sete migrações, seed, `npm run typecheck`, `git diff --check` e `npm run build` foram aprovados. Nenhuma cobrança ou SMS real foi efectuado.
+- WiPay Fase 2: 42/42 testes sem base aprovados e 6/6 fluxos WiPay aprovados numa PostgreSQL 16 isolada com as sete migrações e seed.
+- Cobertos: OAuth simulado, valor calculado no servidor, redireccionamento 303, domínio oficial, assinatura válida/inválida, callback repetido, valor divergente, rejeição, callback antecipado antes da persistência do ID, evento tardio contraditório, indisponibilidade de lugares e emissão única.
+- `npm run typecheck`, `git diff --check` e `npm run build` aprovados. Os testes não contactaram a WiPay, não criaram cobranças e não enviaram SMS.
 
 ## Problemas encontrados
 
@@ -123,6 +137,9 @@ Fase concluída neste ciclo: **Quantidade livre de bilhetes e identificação de
 - A Referência Multicaixa foi retirada apenas do checkout oficial; a integração permanece no código para correcção posterior. O Multicaixa Express é agora o único método público aceite.
 - Como o gateway não entregou webhooks nos testes reais observados, a página de estado do pagamento passou a reconciliar automaticamente a cada 25 segundos. Após confirmação fiável, apresenta o acesso assinado aos bilhetes sem criar uma segunda cobrança.
 - Os produtos Individual, Dupla e Grupo são validados no servidor contra o catálogo do gateway antes da abertura do evento e antes de cada cobrança.
+- A documentação WiPay fornecida descreve apenas criação e callback. Não publica endpoint de consulta de transacção, cancelamento, reembolso, prazo do checkout, limites de API nem o valor mínimo exacto.
+- Sem um endpoint oficial de consulta, uma falha definitiva na entrega do callback não pode ser reconciliada automaticamente de forma segura. O sistema mantém o estado pendente e não emite bilhetes por suposição.
+- O arquivo web da documentação foi comparado com a versão oficial consultada e contém os mesmos dois endpoints: `/v1/credentials/token` e `/v1/hosts/payments`.
 
 ## Operação de contas administrativas
 
@@ -139,7 +156,8 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 
 ## Próximas tarefas
 
-- Fase 2: estudar a documentação oficial angolana e integrar a WiPay em sandbox, sem activar pagamentos públicos.
+- Configurar credenciais WiPay de sandbox apenas no ambiente de Preview e executar o teste oficial com `900000000` (aceite) e os números de rejeição documentados, mantendo `PAYMENTS_ENABLED=false` em produção.
+- Solicitar à WiPay a documentação do endpoint de consulta por ID/referência, cancelamento/reembolso, expiração do checkout, limites e política de rotação do token de assinatura antes de definir a reconciliação automática.
 - Executar manualmente o novo fluxo integrado de 100 Kz em produção e observar a entrega/autenticação do webhook real.
 - Se o webhook não for aceite, recolher apenas os nomes dos cabeçalhos e o formato de assinatura disponibilizados pelo gateway e ajustar o verificador antes da activação pública.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.

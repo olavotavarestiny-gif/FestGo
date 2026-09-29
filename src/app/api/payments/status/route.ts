@@ -37,12 +37,13 @@ export async function POST(request: Request) {
       limit: 30,
       windowMs: 10 * 60_000,
     });
+    const provider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
     const reservation = await prisma.reservation.findUnique({
       where: { id: parsed.data.reservationId },
       include: {
         event: true,
         payments: {
-          where: { provider: "paygo" },
+          where: { provider },
           orderBy: { createdAt: "desc" },
           take: 1,
         },
@@ -54,8 +55,16 @@ export async function POST(request: Request) {
         { error: "Ainda não existe pagamento consultável." },
         { status: 404 },
       );
-    const result = await reconcilePayment(payment.id);
-    if (result.status === "SUCCEEDED") schedulePostPaymentJobs(request);
+    const result =
+      provider === "wipay"
+        ? {
+            status: payment.status,
+            rawStatus: payment.rawStatus,
+            reservationReference: reservation!.reference,
+          }
+        : await reconcilePayment(payment.id);
+    if (result.status === "SUCCEEDED" && provider === "paygo")
+      schedulePostPaymentJobs(request);
     const ticketUrl =
       result.status === "SUCCEEDED" && reservation
         ? (() => {

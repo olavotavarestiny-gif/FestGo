@@ -16,6 +16,7 @@ function uuidConfigured(name: string) {
 }
 
 function configuration() {
+  const provider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
   const paymentUrl = process.env.PAYMENTS_API_URL;
   let paymentEndpointValid = false;
   try {
@@ -24,6 +25,11 @@ function configuration() {
       url.protocol === "https:" &&
       url.hostname === "rouxavcvorjiwhpjhsye.supabase.co" &&
       url.pathname.replace(/\/$/, "") === "/functions/v1/api-v1";
+  } catch {}
+  let wipayEndpoint = false;
+  try {
+    const url = new URL(process.env.WIPAY_API_URL ?? "https://api.wipay.ao");
+    wipayEndpoint = url.protocol === "https:" && url.hostname === "api.wipay.ao";
   } catch {}
   return {
     authSecret: configured("AUTH_SECRET", 32),
@@ -34,6 +40,7 @@ function configuration() {
       configured("KUKUGEST_API_URL") &&
       configured("KUKUGEST_API_KEY"),
     payments: {
+      provider,
       endpoint: paymentEndpointValid,
       apiKey: configured("PAYMENTS_API_KEY") || configured("ApiKeyGo"),
       products: {
@@ -45,28 +52,42 @@ function configuration() {
       webhookSecret:
         configured("PAYMENTS_WEBHOOK_SECRET", 32) ||
         configured("Webhook_secret", 32),
+      wipay: {
+        endpoint: wipayEndpoint,
+        environment: ["sandbox", "production"].includes(
+          process.env.WIPAY_ENVIRONMENT ?? "",
+        ),
+        clientId: process.env.WIPAY_CLIENT_ID?.startsWith("wp_") ?? false,
+        clientSecret:
+          process.env.WIPAY_CLIENT_SECRET?.startsWith("WPS_") ?? false,
+      },
     },
   };
 }
 
 export async function GET() {
   try {
-    const [, officialProductsValid] = await Promise.all([
+    const provider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
+    const checks: Promise<unknown>[] = [
       Promise.race([
       prisma.$queryRaw`SELECT 1`,
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Database timeout")), 3_000),
       ),
       ]),
-      paymentProductsMatch([
+    ];
+    const productsCheck = provider === "paygo"
+      ? paymentProductsMatch([
         {
           productId: process.env.PAYMENTS_PRODUCT_INDIVIDUAL_ID,
           amount: 25_000,
         },
         { productId: process.env.PAYMENTS_PRODUCT_DUO_ID, amount: 47_500 },
         { productId: process.env.PAYMENTS_PRODUCT_GROUP_ID, amount: 90_000 },
-      ]).catch(() => false),
-    ]);
+      ]).catch(() => false)
+      : Promise.resolve(null);
+    checks.push(productsCheck);
+    const [, officialProductsValid] = await Promise.all(checks);
     const config = configuration();
     return NextResponse.json(
       {

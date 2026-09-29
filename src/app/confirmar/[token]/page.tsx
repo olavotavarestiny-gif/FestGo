@@ -106,6 +106,7 @@ export default async function PaymentInvitationPage({
         eventDate={reservation.event.eventDate.toISOString().slice(0, 10)}
         minorAgeLimit={reservation.event.minorAgeLimit}
         paymentsEnabled={arePaymentsEnabled()}
+        paymentProvider={process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo"}
       />
     </>
   );

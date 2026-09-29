@@ -13,6 +13,7 @@ import {
 import { prisma } from "@/lib/db";
 import { verifyReservationToken } from "@/lib/reservation-access";
 import { arePaymentsEnabled } from "@/lib/pre-reservations";
+import { createWiPayPayment, WiPayError } from "@/lib/integrations/wipay";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -112,10 +113,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const method = parsed.data.method as PaymentsApiMethod;
+    const provider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
+    const method = provider === "wipay" ? "hosted" : parsed.data.method;
     let payment = reservation.payments[0];
     if (payment && ["CREATED", "PENDING", "UNKNOWN"].includes(payment.status)) {
-      if (payment.provider !== "paygo" || payment.method !== method)
+      if (payment.provider !== provider || payment.method !== method)
         return NextResponse.json(
           { error: "Já existe um pagamento em curso para esta reserva." },
           { status: 409 },
@@ -129,6 +131,105 @@ export async function POST(request: Request) {
     }
 
     const total = Number(reservation.totalAmount);
+    if (provider === "wipay") {
+      const appUrl = new URL(
+        process.env.APP_URL ?? "https://festgo.mazanga.digital",
+      );
+      if (appUrl.protocol !== "https:" && process.env.NODE_ENV !== "test")
+        return NextResponse.json(
+          { error: "O domínio seguro da FestGo não está configurado." },
+          { status: 503 },
+        );
+      const referenceId = `festgo_${reservation.reference.replace(/[^A-Za-z0-9_-]/g, "_")}_${crypto.randomUUID()}`;
+      payment = await prisma.payment.create({
+        data: {
+          reservationId: reservation.id,
+          provider: "wipay",
+          providerReference: referenceId,
+          idempotencyKey: referenceId,
+          method,
+          status: "CREATED",
+          amount: reservation.totalAmount,
+          currency: reservation.currency,
+          providerDetails: { environment: process.env.WIPAY_ENVIRONMENT },
+        },
+      });
+      try {
+        const resultUrl = new URL("/pagamento", appUrl);
+        resultUrl.searchParams.set("reservation", reservation.id);
+        resultUrl.searchParams.set("token", parsed.data.accessToken);
+        const failureUrl = new URL(resultUrl);
+        failureUrl.searchParams.set("cancelled", "1");
+        const remote = await createWiPayPayment({
+          amount: total,
+          currency: reservation.currency,
+          customerPhone: reservation.customer.phone.replace(/^\+244/, ""),
+          referenceId,
+          successUrl: resultUrl.toString(),
+          failureUrl: failureUrl.toString(),
+          callbackUrl: new URL("/api/webhooks/wipay", appUrl).toString(),
+        });
+        const details = {
+          environment: process.env.WIPAY_ENVIRONMENT,
+          paymentUrl: remote.checkoutUrl,
+        };
+        // Persist the provider ID before returning the hosted URL. A callback can
+        // arrive as soon as the customer completes the hosted flow.
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerPaymentId: remote.paymentId,
+            status: "PENDING",
+            rawStatus: "checkout_created",
+            providerDetails: details,
+          },
+        });
+        await prisma.reservation.updateMany({
+          where: {
+            id: reservation.id,
+            status: {
+              in: ["HELD", "PAYMENT_PENDING", "AWAITING_PAYMENT", "PAYMENT_UNCERTAIN"],
+            },
+          },
+          data: { status: "AWAITING_PAYMENT" },
+        });
+        return NextResponse.json({
+          reservationReference: reservation.reference,
+          paymentId: remote.paymentId,
+          status: "PENDING",
+          amount: total,
+          method,
+          details,
+        });
+      } catch (error) {
+        const rejected =
+          error instanceof WiPayError &&
+          Boolean(error.status) &&
+          error.status! < 500;
+        await prisma.$transaction([
+          prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: rejected ? "FAILED" : "UNKNOWN",
+              rawStatus: rejected ? `HTTP_${error.status}` : "UNKNOWN",
+            },
+          }),
+          prisma.reservation.update({
+            where: { id: reservation.id },
+            data: {
+              status: rejected ? "PAYMENT_PENDING" : "PAYMENT_UNCERTAIN",
+            },
+          }),
+        ]);
+        return NextResponse.json(
+          rejected
+            ? { error: "A WiPay recusou a criação do checkout." }
+            : { reservationReference: reservation.reference, status: "UNKNOWN" },
+          { status: rejected ? 502 : 202 },
+        );
+      }
+    }
+
     const productVariables = {
       INDIVIDUAL: "PAYMENTS_PRODUCT_INDIVIDUAL_ID",
       DUO: "PAYMENTS_PRODUCT_DUO_ID",
@@ -159,7 +260,7 @@ export async function POST(request: Request) {
         reservationId: reservation.id,
         provider: "paygo",
         idempotencyKey: `festgo-${reservation.reference}-${crypto.randomUUID()}`,
-        method,
+        method: method as PaymentsApiMethod,
         status: "CREATED",
         amount: reservation.totalAmount,
         currency: reservation.currency,
@@ -171,7 +272,7 @@ export async function POST(request: Request) {
       const remote = await createPayment({
         productId,
         quantity: 1,
-        method,
+        method: method as PaymentsApiMethod,
         customer: {
           name: reservation.customer.fullName,
           email: reservation.customer.email ?? "",

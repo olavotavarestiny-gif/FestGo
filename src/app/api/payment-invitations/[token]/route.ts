@@ -318,6 +318,8 @@ export async function POST(
       ok: true,
       ...result,
       paymentsEnabled,
+      paymentProvider:
+        process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo",
       accessToken: paymentsEnabled
         ? createReservationToken(result.reservationId)
         : undefined,
