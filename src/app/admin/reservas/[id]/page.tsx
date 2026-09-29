@@ -69,6 +69,15 @@ export default async function ReservationPage({
       include: { user: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     });
+  const experienceLog = auditLogs.find(
+    (log) => log.action === "EXPERIENCE_PREFERENCES_UPDATED",
+  );
+  const experiencePreferences =
+    experienceLog?.metadata &&
+    typeof experienceLog.metadata === "object" &&
+    !Array.isArray(experienceLog.metadata)
+      ? (experienceLog.metadata as Record<string, unknown>)
+      : {};
 
   const approvalContent = smsTemplates.preReservationApproved(reservation.reference);
   const approvalAnalysis = analyzeSms(approvalContent);
@@ -117,7 +126,10 @@ export default async function ReservationPage({
                 <Data label="Valor" value={formatKz(Number(reservation.totalAmount))} />
                 <Data label="Adultos / menores" value={`${reservation.quantity - reservation.minorCount} / ${reservation.minorCount}`} />
                 <Data label="Recolha pretendida" value={reservation.pickupOther || reservation.pickupPreference || "Por definir"} icon={<MapPin size={14} />} />
+                <Data label="Zona de regresso" value={typeof experiencePreferences.returnArea === "string" && experiencePreferences.returnArea ? experiencePreferences.returnArea : "A combinar"} />
                 <Data label="Lugares pretendidos" value={reservation.seatPreferences.map((seat) => seat.seatNumber).join(", ") || (reservation.status === "WAITLIST" ? "Lista de espera" : "—")} />
+                <Data label="FestGo Playlist" value={typeof experiencePreferences.playlistSuggestion === "string" && experiencePreferences.playlistSuggestion ? experiencePreferences.playlistSuggestion : "Sem sugestão"} />
+                <Data label="Actividades infantis" value={experiencePreferences.kidsInterest === true ? "Interessado" : "Sem interesse registado"} />
               </dl>
             </section>
 

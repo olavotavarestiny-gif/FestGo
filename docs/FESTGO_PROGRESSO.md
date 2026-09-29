@@ -172,3 +172,13 @@ O mesmo comando recupera o acesso de uma conta existente, substitui o hash da pa
 - Se o webhook não for aceite, recolher apenas os nomes dos cabeçalhos e o formato de assinatura disponibilizados pelo gateway e ajustar o verificador antes da activação pública.
 - Trocar as credenciais Ziett de teste pelas de produção apenas quando autorizado.
 - Após autorização, manter `BOOKING_MODE=PRE_RESERVATION` e `PRE_RESERVATIONS_ENABLED=true`, activar apenas `SALES_ENABLED=true` e `PAYMENTS_ENABLED=true`, e voltar a publicar a produção.
+
+## Landing FestGo Experience
+
+- Landing reposicionada como **FestGo Experience — Brunch Mangais**, com hero comercial, proposta de valor, seis serviços, FestGo Kids, confiança, percurso, rotas, conversão e FAQ.
+- Removida da proposta a fotografia artificial disponível no repositório. A interface usa apenas identidade visual, ícones e ilustração SVG própria enquanto não existirem fotografias reais aprovadas.
+- FestGo Power e Kids Club são apresentados como sujeitos a confirmação; a inscrição do Kids Club permanece inactiva.
+- CTA de pré-reserva preserva `source` e parâmetros UTM. Eventos locais/data layer preparados para visualização, serviços, CTAs, início e conclusão da pré-reserva e compra confirmada.
+- Formulário passa a recolher opcionalmente zona aproximada de regresso, sugestão de música e interesse nas actividades infantis, sem documentos ou dados pessoais adicionais.
+- As três preferências são guardadas no histórico auditável da reserva, sem migração e sem alterar os dados operacionais existentes.
+- Validações executadas: `npm run typecheck`, `git diff --check`, 6 testes unitários focados e `npm run build`, todos aprovados. Nenhum pagamento, SMS ou publicação em produção foi efectuado nesta actualização.

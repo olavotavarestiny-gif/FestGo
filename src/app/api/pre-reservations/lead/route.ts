@@ -29,6 +29,9 @@ const schema = z
       "OUTRO",
     ]),
     pickupOther: z.string().trim().max(160).optional().default(""),
+    returnArea: z.string().trim().max(160).optional().default(""),
+    playlistSuggestion: z.string().trim().max(160).optional().default(""),
+    kidsInterest: z.boolean().default(false),
     dataConsent: z.literal(true),
     marketingConsent: z.boolean().default(false),
     idempotencyKey: z.string().uuid(),
@@ -244,6 +247,31 @@ export async function POST(request: Request) {
         },
         { status: 409 },
       );
+
+    await prisma.$transaction([
+      prisma.auditLog.deleteMany({
+        where: {
+          action: "EXPERIENCE_PREFERENCES_UPDATED",
+          entityType: "Reservation",
+          entityId: result.id,
+          userId: null,
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          action: "EXPERIENCE_PREFERENCES_UPDATED",
+          entityType: "Reservation",
+          entityId: result.id,
+          metadata: {
+            returnArea: input.returnArea || null,
+            playlistSuggestion: input.playlistSuggestion || null,
+            kidsInterest: input.kidsInterest,
+          },
+          ipAddress: clientIp(request),
+        },
+      }),
+    ]);
+
     return NextResponse.json(
       {
         reservationId: result.id,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Clock3, RefreshCw, X } from "lucide-react";
 
@@ -24,6 +24,7 @@ export function PaymentResult({
     status: cancelled ? "CANCELLED_BY_CUSTOMER" : "LOADING",
   });
   const [busy, setBusy] = useState(false);
+  const paidTracked = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!reservationId) return;
@@ -83,6 +84,14 @@ export function PaymentResult({
     "pending",
     "processing",
   ].includes(state.status);
+
+  useEffect(() => {
+    if (!paid || paidTracked.current) return;
+    paidTracked.current = true;
+    window.dispatchEvent(new CustomEvent("festgo:analytics", { detail: { name: "purchase_confirmed", reference: state.reservationReference ?? "" } }));
+    const analyticsWindow = window as Window & { dataLayer?: Array<Record<string, string>> };
+    analyticsWindow.dataLayer?.push({ event: "purchase_confirmed", reference: state.reservationReference ?? "" });
+  }, [paid, state.reservationReference]);
   return (
     <main className="min-h-screen bg-[#0c0a12] px-5 py-10 text-white">
       <div className="mx-auto max-w-xl pt-16 text-center">

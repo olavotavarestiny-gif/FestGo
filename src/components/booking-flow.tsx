@@ -37,6 +37,9 @@ export function BookingFlow() {
   const [minorAgeLimit, setMinorAgeLimit] = useState(18);
   const [pickup, setPickup] = useState<PickupPreferenceCode>("CIDADE_PRIMEIRO_MAIO");
   const [pickupOther, setPickupOther] = useState("");
+  const [returnArea, setReturnArea] = useState("");
+  const [playlistSuggestion, setPlaylistSuggestion] = useState("");
+  const [kidsInterest, setKidsInterest] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
   const [seatStatus, setSeatStatus] = useState<SeatStatus[]>([]);
   const [seatLoading, setSeatLoading] = useState(true);
@@ -61,6 +64,7 @@ export function BookingFlow() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState<Completed | null>(null);
+  const completionTracked = useRef(false);
   const pricing = useMemo(
     () => calculateTicketPricing(quantity, prices),
     [quantity, prices],
@@ -74,6 +78,9 @@ export function BookingFlow() {
     (pickup !== "OUTRO" || pickupOther.trim().length >= 3);
 
   useEffect(() => {
+    window.dispatchEvent(new CustomEvent("festgo:analytics", { detail: { name: "pre_reservation_started" } }));
+    const analyticsWindow = window as Window & { dataLayer?: Array<Record<string, string>> };
+    analyticsWindow.dataLayer?.push({ event: "pre_reservation_started" });
     const query = new URLSearchParams(window.location.search);
     setCampaign({
       campaignSource: query.get("source") ?? "",
@@ -85,6 +92,14 @@ export function BookingFlow() {
     });
     void refreshSeats();
   }, []);
+
+  useEffect(() => {
+    if (!completed || completionTracked.current) return;
+    completionTracked.current = true;
+    window.dispatchEvent(new CustomEvent("festgo:analytics", { detail: { name: "pre_reservation_completed", reference: completed.reference } }));
+    const analyticsWindow = window as Window & { dataLayer?: Array<Record<string, string>> };
+    analyticsWindow.dataLayer?.push({ event: "pre_reservation_completed", reference: completed.reference });
+  }, [completed]);
 
   useEffect(() => {
     setPassengers((current) => Array.from(
@@ -154,7 +169,8 @@ export function BookingFlow() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name, phone, email, quantity, pickupPreference: pickup,
-            pickupOther, dataConsent, marketingConsent, idempotencyKey,
+            pickupOther, returnArea, playlistSuggestion, kidsInterest,
+            dataConsent, marketingConsent, idempotencyKey,
             referral,
             ...(lead
               ? { reservationId: lead.reservationId, accessToken: lead.accessToken }
@@ -283,6 +299,7 @@ export function BookingFlow() {
                 {pickupPreferences.map((option) => <label className={pickup === option.code ? "is-selected" : ""} key={option.code}><input type="radio" name="pickup" checked={pickup === option.code} onChange={() => setPickup(option.code)} /><MapPin size={18} /><span>{option.label}</span><Check size={16} /></label>)}
               </div>
               {pickup === "OUTRO" && <label className="pre-field-label">Localização pretendida<input className="pre-field" maxLength={160} value={pickupOther} onChange={(e) => setPickupOther(e.target.value)} placeholder="Ex.: Kilamba, junto ao edifício..." /></label>}
+              <label className="pre-field-label">Zona aproximada de regresso <small>(opcional)</small><input className="pre-field" maxLength={160} value={returnArea} onChange={(e) => setReturnArea(e.target.value)} placeholder="Ex.: Talatona, Benfica, Cidade..." /></label>
               <Navigation back={() => setStep(1)} next={() => setStep(3)} nextDisabled={pickup === "OUTRO" && pickupOther.trim().length < 3} />
             </div>
           )}
@@ -313,6 +330,8 @@ export function BookingFlow() {
                 <div className="passenger-fields">{passengers.map((passenger, index) => <div className="rounded-xl border border-white/10 p-3" key={index}><label className="pre-field-label">Nome do passageiro {index + 1}<input className="pre-field" autoComplete="off" placeholder={`Nome completo do passageiro ${index + 1}`} value={passenger.fullName} onChange={(e) => setPassengers((current) => current.map((value, position) => position === index ? { ...value, fullName: e.target.value } : value))} /></label><label className="pre-field-label">Data de nascimento<input className="pre-field" type="date" max={eventDate} value={passenger.birthDate} onChange={(e) => setPassengers((current) => current.map((value, position) => position === index ? { ...value, birthDate: e.target.value } : value))} /></label></div>)}</div>
                 {passengers.some((passenger) => passenger.birthDate && ageOnDate(new Date(`${passenger.birthDate}T00:00:00.000Z`), new Date(`${eventDate}T00:00:00.000Z`)) < minorAgeLimit) && <div className="contact-block"><h2>Adulto responsável pelos menores</h2><div className="contact-grid"><label className="pre-field-label">Nome completo<input className="pre-field" value={minorGuardianName} onChange={(e) => setMinorGuardianName(e.target.value)} /></label><label className="pre-field-label">Telefone<input className="pre-field" inputMode="tel" value={minorGuardianPhone} onChange={(e) => setMinorGuardianPhone(e.target.value)} /></label></div></div>}
                 <label className="pre-field-label">Código de recomendação <small>(opcional)</small><input className="pre-field" maxLength={80} value={referral} onChange={(e) => setReferral(e.target.value)} /></label>
+                <label className="pre-field-label">Sugere uma música para a FestGo Playlist <small>(opcional)</small><input className="pre-field" maxLength={160} value={playlistSuggestion} onChange={(e) => setPlaylistSuggestion(e.target.value)} placeholder="Artista e nome da música" /></label>
+                <label className="check-row"><input type="checkbox" checked={kidsInterest} onChange={(e) => setKidsInterest(e.target.checked)} /><span>Viajo com crianças e quero receber informações sobre as actividades infantis confirmadas para a viagem.</span></label>
                 <label className="check-row"><input type="checkbox" checked={dataConsent} onChange={(e) => setDataConsent(e.target.checked)} /><span>Aceito o registo destes dados para gerir a minha inscrição e o contacto operacional.</span></label>
                 <label className="check-row"><input type="checkbox" checked={marketingConsent} onChange={(e) => setMarketingConsent(e.target.checked)} /><span>Quero receber novidades e campanhas FestGo. <em>(opcional)</em></span></label>
               </div>
@@ -329,9 +348,12 @@ export function BookingFlow() {
                 <Summary label="Total indicativo" value={formatKz(pricing.total)} />
                 {pricing.discount > 0 && <Summary label="Desconto dos pacotes" value={`− ${formatKz(pricing.discount)}`} />}
                 <Summary label="Recolha pretendida" value={pickup === "OUTRO" ? pickupOther : pickupPreferences.find((item) => item.code === pickup)?.label ?? ""} />
+                <Summary label="Zona de regresso" value={returnArea || "A combinar"} />
                 <Summary label="Lugares pretendidos" value={joinWaitlist ? "Lista de espera" : selectedSeats.join(", ")} />
                 <Summary label="Responsável" value={`${name} · ${phone}`} />
                 <Summary label="Passageiros" value={passengers.map((passenger) => passenger.fullName).join(", ")} />
+                {playlistSuggestion && <Summary label="Música sugerida" value={playlistSuggestion} />}
+                {kidsInterest && <Summary label="Experiência infantil" value="Tenho interesse" />}
               </dl>
               <div className="pre-alert"><Info size={18} /><span>Pré-reserva sem pagamento. O preço inclui ida e volta, mas não inclui o ingresso do evento. A rota, os horários e os lugares só serão confirmados após pagamento validado e confirmação operacional.</span></div>
               <label className="check-row"><input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} /><span>Li e aceito as condições de pré-reserva e a política de privacidade.</span></label>
