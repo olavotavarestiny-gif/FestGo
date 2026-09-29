@@ -4,7 +4,6 @@ import { reconcilePayment } from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
 import { verifyReservationToken } from "@/lib/reservation-access";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
-import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 import { arePaymentsEnabled } from "@/lib/pre-reservations";
 import { createTicketBundleToken } from "@/lib/ticket-access";
 
@@ -63,10 +62,13 @@ export async function POST(request: Request) {
             reservationReference: reservation!.reference,
           }
         : await reconcilePayment(payment.id);
-    if (result.status === "SUCCEEDED" && provider === "paygo")
-      schedulePostPaymentJobs(request);
+    const currentReservation = await prisma.reservation.findUnique({
+      where: { id: parsed.data.reservationId },
+      select: { status: true },
+    });
+    const administrativelyConfirmed = currentReservation?.status === "PAID";
     const ticketUrl =
-      result.status === "SUCCEEDED" && reservation
+      result.status === "SUCCEEDED" && administrativelyConfirmed && reservation
         ? (() => {
             const expiry = new Date(
               (reservation.event.returnAt ?? reservation.event.eventDate).getTime() +
@@ -79,7 +81,14 @@ export async function POST(request: Request) {
             return `/reserva/${encodeURIComponent(reservation.reference)}/bilhetes?token=${encodeURIComponent(token)}`;
           })()
         : undefined;
-    return NextResponse.json({ ...result, ticketUrl });
+    return NextResponse.json({
+      ...result,
+      status:
+        result.status === "SUCCEEDED" && !administrativelyConfirmed
+          ? "AWAITING_CONFIRMATION"
+          : result.status,
+      ticketUrl,
+    });
   } catch (error) {
     if (
       typeof error === "object" &&

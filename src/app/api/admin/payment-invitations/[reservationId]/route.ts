@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { staffFromRequest } from "@/lib/auth";
@@ -69,16 +69,24 @@ export async function POST(
   });
   if (!reservation)
     return NextResponse.json({ error: "Reserva não encontrada." }, { status: 404 });
-  if (reservation.status !== "PAYMENT_PENDING")
-    return NextResponse.json(
-      { error: "A pré-reserva deve estar aprovada e sem cobrança activa." },
-      { status: 409 },
-    );
-  if (reservation.payments.length)
-    return NextResponse.json(
-      { error: "Já existe uma cobrança associada a esta reserva." },
-      { status: 409 },
-    );
+  if (parsed.data.action === "CONFIRM_MANUAL_PAYMENT") {
+    if (!["PAYMENT_PENDING", "PAYMENT_UNCERTAIN"].includes(reservation.status))
+      return NextResponse.json(
+        { error: "Esta reserva já não aguarda confirmação de pagamento." },
+        { status: 409 },
+      );
+  } else {
+    if (reservation.status !== "PAYMENT_PENDING")
+      return NextResponse.json(
+        { error: "A pré-reserva deve estar aprovada e sem cobrança activa." },
+        { status: 409 },
+      );
+    if (reservation.payments.length)
+      return NextResponse.json(
+        { error: "Já existe uma cobrança associada a esta reserva." },
+        { status: 409 },
+      );
+  }
 
   if (parsed.data.action === "GENERATE") {
     const result = await prisma.$transaction(async (tx) => {
@@ -227,8 +235,22 @@ export async function POST(
     const result = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${reservation.eventId} FOR UPDATE`;
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`manual-payment:${transactionReference}`}, 0))`;
+      const current = await tx.reservation.findUniqueOrThrow({
+        where: { id: reservationId },
+        include: {
+          passengers: true,
+          seatPreferences: { where: { releasedAt: null } },
+          payments: true,
+        },
+      });
+      if (
+        !["PAYMENT_PENDING", "PAYMENT_UNCERTAIN"].includes(current.status) ||
+        !current.operationalConfirmed
+      )
+        return { ok: false, reason: "STATE" } as const;
       const referenceAlreadyUsed = await tx.payment.findFirst({
         where: {
+          reservationId: { not: current.id },
           OR: [
             { providerReference: transactionReference },
             { providerPaymentId: transactionReference },
@@ -238,20 +260,25 @@ export async function POST(
       });
       if (referenceAlreadyUsed)
         return { ok: false, reason: "REFERENCE" } as const;
-      const current = await tx.reservation.findUniqueOrThrow({
-        where: { id: reservationId },
-        include: {
-          passengers: true,
-          seatPreferences: { where: { releasedAt: null } },
-          payments: {
-            where: { status: { in: ["CREATED", "PENDING", "UNKNOWN", "SUCCEEDED"] } },
-          },
-        },
-      });
+      const succeededPayments = current.payments.filter(
+        (payment) => payment.status === "SUCCEEDED",
+      );
+      if (succeededPayments.length > 1)
+        return { ok: false, reason: "STATE" } as const;
+      const succeededPayment = succeededPayments[0];
       if (
-        current.status !== "PAYMENT_PENDING" ||
-        !current.operationalConfirmed ||
-        current.payments.length
+        succeededPayment &&
+        ![
+          succeededPayment.providerReference,
+          succeededPayment.providerPaymentId,
+        ].includes(transactionReference)
+      )
+        return { ok: false, reason: "MISMATCH" } as const;
+      if (
+        !succeededPayment &&
+        current.payments.some((payment) =>
+          ["CREATED", "PENDING", "UNKNOWN"].includes(payment.status),
+        )
       )
         return { ok: false, reason: "STATE" } as const;
       const seats = current.seatPreferences.map((seat) => seat.seatNumber);
@@ -269,24 +296,25 @@ export async function POST(
       if (seats.length !== current.quantity || conflicts)
         return { ok: false, reason: "SEATS" } as const;
       const now = new Date();
-      await tx.payment.create({
-        data: {
-          reservationId: current.id,
-          provider: "manual-admin",
-          idempotencyKey: `manual-${current.id}`,
-          method: "external-link",
-          status: "SUCCEEDED",
-          amount: current.totalAmount,
-          currency: current.currency,
-          providerReference: transactionReference,
-          rawStatus: "verified_by_admin",
-          reconciledAt: now,
-          providerDetails: { confirmedById: user.id },
-        },
-      });
+      if (!succeededPayment)
+        await tx.payment.create({
+          data: {
+            reservationId: current.id,
+            provider: "manual-admin",
+            idempotencyKey: `manual-${current.id}`,
+            method: "external-link",
+            status: "SUCCEEDED",
+            amount: current.totalAmount,
+            currency: current.currency,
+            providerReference: transactionReference,
+            rawStatus: "verified_by_admin",
+            reconciledAt: now,
+            providerDetails: { confirmedById: user.id },
+          },
+        });
       await tx.reservation.update({
         where: { id: current.id },
-        data: { status: "PAID", paidAt: now },
+        data: { status: "PAID", paidAt: current.paidAt ?? now },
       });
       await tx.seatPreference.updateMany({
         where: { reservationId: current.id, releasedAt: null },
@@ -296,14 +324,35 @@ export async function POST(
         data: current.passengers.map((passenger) => ({ passengerId: passenger.id })),
         skipDuplicates: true,
       });
+      await tx.referralRedemption.updateMany({
+        where: { reservationId: current.id, confirmedAt: null },
+        data: { confirmedAt: now },
+      });
+      if (current.discountId)
+        await tx.discount.update({
+          where: { id: current.discountId },
+          data: { usedCount: { increment: 1 } },
+        });
+      const referralCode = `FG${createHash("sha256")
+        .update(current.customerId)
+        .digest("hex")
+        .slice(0, 10)
+        .toUpperCase()}`;
+      await tx.referralCode.upsert({
+        where: { customerId: current.customerId },
+        create: { customerId: current.customerId, code: referralCode },
+        update: {},
+      });
       await tx.auditLog.create({
         data: {
           userId: user.id,
-          action: "PAYMENT_MANUALLY_VERIFIED",
+          action: "PAYMENT_ADMINISTRATIVELY_CONFIRMED",
           entityType: "Reservation",
           entityId: current.id,
           metadata: {
             transactionReference,
+            paymentId: succeededPayment?.id ?? null,
+            provider: succeededPayment?.provider ?? "manual-admin",
             amount: Number(current.totalAmount),
             currency: current.currency,
             seats,
@@ -321,6 +370,8 @@ export async function POST(
               ? "Os lugares pretendidos já não estão todos disponíveis. Altera-os antes de confirmar o pagamento."
               : result.reason === "REFERENCE"
                 ? "Esta referência de pagamento já foi utilizada. Confirma a transacção antes de tentar novamente."
+              : result.reason === "MISMATCH"
+                ? "A referência indicada não corresponde ao pagamento recebido pelo gateway."
               : "A reserva já foi alterada ou tem um pagamento associado.",
         },
         { status: 409 },

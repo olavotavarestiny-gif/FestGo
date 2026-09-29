@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as wipayCallback } from "@/app/api/webhooks/wipay/route";
 import { POST as wipayTestCallback } from "@/app/api/webhooks/wipay-test/route";
+import { POST as managePaymentInvitation } from "@/app/api/admin/payment-invitations/[reservationId]/route";
+import { createSessionToken } from "@/lib/auth-crypto";
 import { resetWiPayTokenCacheForTests } from "@/lib/integrations/wipay";
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
@@ -11,6 +13,7 @@ const signatureToken = "signature-token-with-more-than-thirty-two-characters";
 
 describe.skipIf(!enabled)("WiPay callback flow", () => {
   let eventId = "";
+  let adminCookie = "";
 
   beforeAll(async () => {
     process.env.WIPAY_API_URL = "https://api.wipay.ao";
@@ -22,6 +25,20 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     eventId = (
       await prisma.event.findUniqueOrThrow({ where: { slug: "brunch-mangais" } })
     ).id;
+    const admin = await prisma.user.create({
+      data: {
+        email: `wipay-admin-${randomUUID()}@example.test`,
+        name: "Administrador WiPay",
+        passwordHash: "test",
+        role: "ADMIN",
+      },
+    });
+    adminCookie = `festgo_session=${createSessionToken({
+      userId: admin.id,
+      role: "ADMIN",
+      sessionVersion: admin.sessionVersion,
+      exp: Math.floor(Date.now() / 1000) + 3_600,
+    })}`;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -72,6 +89,9 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
               },
             }
           : {}),
+        paymentInvitation: {
+          create: { expiresAt: new Date(Date.now() + 60 * 60_000) },
+        },
       },
       include: { passengers: true },
     });
@@ -126,17 +146,42 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     };
   }
 
-  it("accepts a signed callback exactly once and emits one ticket", async () => {
+  it("records a signed callback once and waits for the administrator before occupying the seat", async () => {
     const prepared = await preparedPayment({ seat: 11 });
     const payload = payloadFor(prepared);
     const first = await wipayCallback(callbackRequest(payload));
     expect(first.status).toBe(200);
     expect(await prisma.ticket.count({
       where: { passenger: { reservationId: prepared.reservation.id } },
+    })).toBe(0);
+    expect((await prisma.reservation.findUniqueOrThrow({
+      where: { id: prepared.reservation.id },
+    })).status).toBe("PAYMENT_UNCERTAIN");
+
+    const confirmed = await managePaymentInvitation(
+      new Request(
+        `http://localhost/api/admin/payment-invitations/${prepared.reservation.id}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: adminCookie },
+          body: JSON.stringify({
+            action: "CONFIRM_MANUAL_PAYMENT",
+            transactionReference: prepared.providerPaymentId,
+          }),
+        },
+      ),
+      { params: Promise.resolve({ reservationId: prepared.reservation.id }) },
+    );
+    expect(confirmed.status).toBe(200);
+    expect(await prisma.ticket.count({
+      where: { passenger: { reservationId: prepared.reservation.id } },
     })).toBe(1);
     expect((await prisma.reservation.findUniqueOrThrow({
       where: { id: prepared.reservation.id },
     })).status).toBe("PAID");
+    expect((await prisma.seatPreference.findFirstOrThrow({
+      where: { reservationId: prepared.reservation.id },
+    })).status).toBe("CONFIRMED");
 
     const duplicate = await wipayCallback(callbackRequest(payload));
     expect(await duplicate.json()).toMatchObject({ duplicate: true });
@@ -172,7 +217,7 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     })).toMatchObject({ status: "SUCCEEDED" });
     expect((await prisma.reservation.findUniqueOrThrow({
       where: { id: prepared.reservation.id },
-    })).status).toBe("PAID");
+    })).status).toBe("PAYMENT_UNCERTAIN");
   });
 
   it("rejects an invalid signature and an incorrect amount", async () => {

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 
 export type PaymentsApiMethod = "multicaixa" | "reference";
@@ -424,45 +423,7 @@ export async function reconcilePayment(localPaymentId: string) {
       },
     });
     if (status === "SUCCEEDED") {
-      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${local.reservation.eventId} FOR UPDATE`;
-      const currentReservation = await tx.reservation.findUniqueOrThrow({
-        where: { id: local.reservationId },
-        include: { seatPreferences: { where: { releasedAt: null } } },
-      });
-      const seatNumbers = currentReservation.seatPreferences.map(
-        (seat) => seat.seatNumber,
-      );
-      const conflicts = seatNumbers.length
-        ? await tx.seatPreference.count({
-            where: {
-              eventId: currentReservation.eventId,
-              reservationId: { not: currentReservation.id },
-              seatNumber: { in: seatNumbers },
-              status: "CONFIRMED",
-              releasedAt: null,
-            },
-          })
-        : 0;
-      if (
-        !currentReservation.operationalConfirmed ||
-        seatNumbers.length !== currentReservation.quantity ||
-        conflicts
-      ) {
-        await tx.reservation.update({
-          where: { id: local.reservationId },
-          data: { status: "PAYMENT_UNCERTAIN", paidAt: new Date() },
-        });
-        await tx.auditLog.create({
-          data: {
-            action: "PAYMENT_RECEIVED_WITHOUT_CONFIRMED_SEATS",
-            entityType: "Reservation",
-            entityId: local.reservationId,
-            metadata: { paymentId: local.id, conflicts },
-          },
-        });
-        return;
-      }
-      const transitioned = await tx.reservation.updateMany({
+      const awaitingConfirmation = await tx.reservation.updateMany({
         where: {
           id: local.reservationId,
           status: {
@@ -471,57 +432,22 @@ export async function reconcilePayment(localPaymentId: string) {
               "PAYMENT_PENDING",
               "AWAITING_PAYMENT",
               "PAYMENT_UNCERTAIN",
+              "CANCELLED",
+              "EXPIRED",
             ],
           },
         },
-        data: { status: "PAID", paidAt: new Date() },
+        data: { status: "PAYMENT_UNCERTAIN", paidAt: new Date() },
       });
-      if (transitioned.count) {
-        await tx.seatPreference.updateMany({
-          where: { reservationId: local.reservationId, releasedAt: null },
-          data: { status: "CONFIRMED" },
-        });
-        await tx.ticket.createMany({
-          data: local.reservation.passengers.map((passenger) => ({
-            passengerId: passenger.id,
-          })),
-          skipDuplicates: true,
-        });
-        await tx.referralRedemption.updateMany({
-          where: { reservationId: local.reservationId, confirmedAt: null },
-          data: { confirmedAt: new Date() },
-        });
-        if (local.reservation.discountId)
-          await tx.discount.update({
-            where: { id: local.reservation.discountId },
-            data: { usedCount: { increment: 1 } },
-          });
-        const code = `FG${createHash("sha256").update(local.reservation.customerId).digest("hex").slice(0, 10).toUpperCase()}`;
-        await tx.referralCode.upsert({
-          where: { customerId: local.reservation.customerId },
-          create: { customerId: local.reservation.customerId, code },
-          update: {},
-        });
-        await tx.cRMIntegrationJob.upsert({
-          where: {
-            reservationId_kind: {
-              reservationId: local.reservationId,
-              kind: "SALE",
-            },
+      if (awaitingConfirmation.count)
+        await tx.auditLog.create({
+          data: {
+            action: "PAYMENT_AWAITING_ADMIN_CONFIRMATION",
+            entityType: "Reservation",
+            entityId: local.reservationId,
+            metadata: { paymentId: local.id, provider: local.provider },
           },
-          create: { reservationId: local.reservationId, kind: "SALE" },
-          update: {},
         });
-        await tx.notification.createMany({
-          data: [{
-            reservationId: local.reservationId,
-            channel: "SMS",
-            recipient: local.reservation.customer.phone,
-            template: "BOOKING_PAID",
-          }],
-          skipDuplicates: true,
-        });
-      }
     } else if (status === "REFUNDED") {
       await tx.reservation.update({
         where: { id: local.reservationId },

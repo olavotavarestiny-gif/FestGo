@@ -65,7 +65,7 @@ export function PaymentResult({
   useEffect(() => {
     if (
       cancelled ||
-      !["LOADING", "PENDING", "UNKNOWN", "created", "pending", "processing"].includes(
+      !["LOADING", "PENDING", "UNKNOWN", "AWAITING_CONFIRMATION", "created", "pending", "processing"].includes(
         state.status,
       )
     )
@@ -75,11 +75,13 @@ export function PaymentResult({
   }, [cancelled, refresh, state.status]);
 
   const paid = state.status === "SUCCEEDED";
+  const awaitingConfirmation = state.status === "AWAITING_CONFIRMATION";
   const pending = [
     "LOADING",
     "CREATED",
     "PENDING",
     "UNKNOWN",
+    "AWAITING_CONFIRMATION",
     "created",
     "pending",
     "processing",
@@ -112,6 +114,8 @@ export function PaymentResult({
         <h1 className="mt-3 text-4xl font-black tracking-tight">
           {paid
             ? "Pagamento confirmado."
+            : awaitingConfirmation
+              ? "Pagamento recebido."
             : pending
               ? "Pagamento pendente."
               : cancelled
@@ -121,6 +125,8 @@ export function PaymentResult({
         <p className="mt-5 leading-7 text-white/55">
           {paid
             ? "O processador confirmou o pagamento e os bilhetes foram emitidos."
+            : awaitingConfirmation
+              ? "A FestGo recebeu a confirmação do processador. A equipa vai validar o pagamento antes de ocupar os lugares e emitir os bilhetes."
             : pending
               ? "A confirmação ainda não chegou. Podes consultar novamente sem criar outra cobrança."
               : "Não emitimos bilhetes. Se chegaste a pagar, consulta novamente antes de tentar outro pagamento."}

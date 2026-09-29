@@ -53,6 +53,7 @@ export default async function ReservationPage({
           include: { requestedBy: { select: { name: true } } },
           orderBy: { createdAt: "desc" },
         },
+        payments: { orderBy: { createdAt: "desc" } },
         paymentInvitation: true,
       },
     });
@@ -89,6 +90,9 @@ export default async function ReservationPage({
   );
   const paymentLinkSms = reservation.notifications.find(
     (notification) => notification.template === "PAYMENT_LINK",
+  );
+  const confirmedPayment = reservation.payments.find(
+    (payment) => payment.status === "SUCCEEDED",
   );
   const paymentInvitation = reservation.paymentInvitation;
   const paymentLink = paymentInvitation && !paymentInvitation.revokedAt
@@ -205,6 +209,11 @@ export default async function ReservationPage({
                     encoding: paymentSmsAnalysis.encoding,
                     segments: paymentSmsAnalysis.segments,
                   } : null}
+                  paymentReference={
+                    confirmedPayment?.providerPaymentId ??
+                    confirmedPayment?.providerReference ??
+                    null
+                  }
                 />
               </div>
             </div>

@@ -5,7 +5,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { verifyWiPaySignature, WiPayError } from "@/lib/integrations/wipay";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
-import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 
 export const runtime = "nodejs";
 
@@ -168,24 +167,6 @@ export async function POST(request: Request) {
           return { status: "FAILED", ticketsIssued: false } as const;
         }
 
-        const seatNumbers = current.reservation.seatPreferences.map(
-          (seat) => seat.seatNumber,
-        );
-        const conflicts = seatNumbers.length
-          ? await tx.seatPreference.count({
-              where: {
-                eventId: current.reservation.eventId,
-                reservationId: { not: current.reservationId },
-                seatNumber: { in: seatNumbers },
-                status: "CONFIRMED",
-                releasedAt: null,
-              },
-            })
-          : 0;
-        const seatsValid =
-          current.reservation.operationalConfirmed &&
-          seatNumbers.length === current.reservation.quantity &&
-          conflicts === 0;
         await tx.payment.update({
           where: { id: current.id },
           data: {
@@ -196,54 +177,31 @@ export async function POST(request: Request) {
             reconciledAt: new Date(),
           },
         });
-        if (!seatsValid) {
-          await tx.reservation.update({
-            where: { id: current.reservationId },
+        const awaitingConfirmation = current.reservation.status !== "PAID";
+        if (awaitingConfirmation) {
+          await tx.reservation.updateMany({
+            where: {
+              id: current.reservationId,
+              status: {
+                in: [
+                  "HELD",
+                  "PAYMENT_PENDING",
+                  "AWAITING_PAYMENT",
+                  "PAYMENT_UNCERTAIN",
+                  "CANCELLED",
+                  "EXPIRED",
+                ],
+              },
+            },
             data: { status: "PAYMENT_UNCERTAIN", paidAt: new Date() },
           });
           await tx.auditLog.create({
             data: {
-              action: "WIPAY_PAID_WITHOUT_AVAILABLE_SEATS",
+              action: "WIPAY_PAYMENT_AWAITING_ADMIN_CONFIRMATION",
               entityType: "Reservation",
               entityId: current.reservationId,
               metadata: { paymentId: current.id, providerPaymentId: payload.id },
             },
-          });
-          await tx.paymentWebhookEvent.update({
-            where: { id: webhook.id },
-            data: { processedAt: new Date() },
-          });
-          return { status: "SUCCEEDED", ticketsIssued: false } as const;
-        }
-
-        const transitioned = await tx.reservation.updateMany({
-          where: {
-            id: current.reservationId,
-            status: {
-              in: ["HELD", "PAYMENT_PENDING", "AWAITING_PAYMENT", "PAYMENT_UNCERTAIN"],
-            },
-          },
-          data: { status: "PAID", paidAt: new Date() },
-        });
-        if (transitioned.count) {
-          await tx.seatPreference.updateMany({
-            where: { reservationId: current.reservationId, releasedAt: null },
-            data: { status: "CONFIRMED" },
-          });
-          await tx.ticket.createMany({
-            data: current.reservation.passengers.map((passenger) => ({
-              passengerId: passenger.id,
-            })),
-            skipDuplicates: true,
-          });
-          await tx.notification.createMany({
-            data: [{
-              reservationId: current.reservationId,
-              channel: "SMS",
-              recipient: payment.reservation.customer.phone,
-              template: "BOOKING_PAID",
-            }],
-            skipDuplicates: true,
           });
         }
         await tx.paymentWebhookEvent.update({
@@ -252,12 +210,12 @@ export async function POST(request: Request) {
         });
         return {
           status: "SUCCEEDED",
-          ticketsIssued: transitioned.count > 0,
+          ticketsIssued: false,
+          awaitingAdminConfirmation: awaitingConfirmation,
         } as const;
       },
       { isolationLevel: "Serializable", timeout: 10_000 },
     );
-    if (result.ticketsIssued) schedulePostPaymentJobs(request);
     return NextResponse.json({ received: true, ...result });
   } catch (error) {
     if (
