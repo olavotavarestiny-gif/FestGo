@@ -282,6 +282,7 @@ export async function POST(
       (error instanceof DOMException && error.name === "TimeoutError"
         ? "WIPAY_TIMEOUT"
         : "UNEXPECTED_ERROR");
+    const diagnosticDetail = wipayError?.detail ?? null;
     const knownFailure =
       (Boolean(providerError?.status) && (providerError?.status ?? 500) < 500) ||
       (Boolean(wipayError?.status) && (wipayError?.status ?? 500) < 500);
@@ -295,6 +296,11 @@ export async function POST(
             !storedProviderPaymentId
               ? diagnosticCode
               : "UNKNOWN",
+          providerDetails: {
+            ...jsonObject(payment.providerDetails),
+            diagnosticCode,
+            diagnosticDetail,
+          },
         },
       }),
       prisma.auditLog.create({
@@ -306,6 +312,7 @@ export async function POST(
           metadata: {
             providerPaymentId: storedProviderPaymentId,
             diagnosticCode,
+            diagnosticDetail,
             providerStatus: providerError?.status ?? wipayError?.status ?? null,
           },
           ipAddress: clientIp(request),
@@ -316,9 +323,10 @@ export async function POST(
       {
         error:
           providerError || wipayError
-            ? (providerError ?? wipayError)!.message
+            ? `${(providerError ?? wipayError)!.message}${diagnosticDetail ? ` Host: ${diagnosticDetail}` : ""}`
             : "Não foi possível iniciar o pagamento de teste.",
         diagnosticCode,
+        diagnosticDetail,
       },
       { status: knownFailure ? 502 : 202 },
     );

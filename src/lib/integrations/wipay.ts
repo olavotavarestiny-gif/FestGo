@@ -11,6 +11,7 @@ export class WiPayError extends Error {
     message: string,
     readonly status?: number,
     readonly code?: string,
+    readonly detail?: string,
   ) {
     super(message);
     this.name = "WiPayError";
@@ -18,7 +19,7 @@ export class WiPayError extends Error {
 }
 
 function isOfficialHostedHostname(hostname: string) {
-  const normalized = hostname.toLowerCase();
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
   return normalized === "wipay.ao" || normalized.endsWith(".wipay.ao");
 }
 
@@ -114,8 +115,20 @@ export async function createWiPayPayment(input: {
   if (!location) throw new WiPayError("A WiPay não devolveu o checkout.", undefined, "CHECKOUT_LOCATION_MISSING");
   const checkout = new URL(location);
   const paymentId = checkout.searchParams.get("id");
-  if (checkout.protocol !== "https:" || !isOfficialHostedHostname(checkout.hostname))
-    throw new WiPayError("A WiPay devolveu um domínio de checkout inválido.", undefined, "CHECKOUT_HOST_INVALID");
+  if (checkout.protocol !== "https:")
+    throw new WiPayError(
+      "A WiPay devolveu um protocolo de checkout inseguro.",
+      undefined,
+      "CHECKOUT_PROTOCOL_INVALID",
+      checkout.protocol,
+    );
+  if (!isOfficialHostedHostname(checkout.hostname))
+    throw new WiPayError(
+      "A WiPay devolveu um domínio de checkout não documentado.",
+      undefined,
+      "CHECKOUT_HOST_INVALID",
+      checkout.hostname.toLowerCase().replace(/\.$/, ""),
+    );
   if (!paymentId || !/^[0-9a-f-]{36}$/i.test(paymentId))
     throw new WiPayError("A WiPay devolveu um identificador inválido.", undefined, "CHECKOUT_ID_INVALID");
   if (!checkout.searchParams.get("nonce"))

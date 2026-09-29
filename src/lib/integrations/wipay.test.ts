@@ -91,7 +91,7 @@ describe("WiPay Angola integration", () => {
         failureUrl: "https://festgo.mazanga.digital/pagamento?cancelled=1",
         callbackUrl: "https://festgo.mazanga.digital/api/webhooks/wipay",
       }),
-    ).rejects.toThrow("checkout inválido");
+    ).rejects.toThrow("não documentado");
   });
 
   it("accepts an HTTPS checkout on another official WiPay subdomain", async () => {
