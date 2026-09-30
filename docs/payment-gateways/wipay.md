@@ -17,9 +17,9 @@ O token de âmbito `signature` é preparado antes de criar o checkout e guardado
 
 Para investigar um pagamento pendente, consultar a referência e os eventos do callback. Um retorno do navegador não substitui o callback. Se a WiPay não enviar uma notificação `accepted` com assinatura válida, a reserva permanece pendente e não se emite bilhete. Para uma transacção antiga cujo callback foi recusado, solicitar à WiPay um reenvio assinado ou uma confirmação verificável; não marcar a reserva como paga apenas pelo redirect.
 
-## Homologação pendente
+## Homologação sandbox
 
-Em 30/09/2026, os testes sandbox feitos no domínio público regressaram pela URL de sucesso, mas o callback recebeu HTTP 401 e as reservas permaneceram pendentes. A investigação mostrou que o domínio apontava para um redeploy do commit antigo `e475581`, cujo webhook solicitava um token `signature` novo durante a verificação. A WiPay assina com o último token emitido; por isso, esse comportamento invalida a assinatura. A correção prepara e guarda o token antes do checkout, e o webhook verifica apenas com o token guardado. É necessário repetir o teste ponta a ponta depois de publicar essa correção. Não desactivar a verificação de HMAC para abrir vendas.
+Em 30/09/2026, os primeiros testes no domínio público receberam HTTP 401. O domínio apontava para um redeploy do commit antigo `e475581`, cujo webhook solicitava um token `signature` novo durante a verificação. Após publicar a correção, foi preciso renovar uma vez o token guardado, que tinha ficado desalinhado com o último token emitido pela WiPay durante os testes antigos. O teste sandbox `PROBE-ROTATED-B16C8773` com Multicaixa Express e `900000000` concluiu o fluxo: callback HTTP 200, estado `accepted`, reserva `PAID` e bilhete emitido. O webhook verifica apenas com o token guardado, sem solicitar outro ao receber o callback. Não desactivar a verificação de HMAC para abrir vendas.
 
 ## Configuração do projecto
 
