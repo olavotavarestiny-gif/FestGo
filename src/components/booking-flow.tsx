@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, BusFront, Check, Info, MapPin, Users } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { event, formatKz } from "@/lib/data";
+import { buildWhatsAppReservationUrl } from "@/lib/whatsapp";
 import {
   ageOnDate,
   calculateTicketPricing,
@@ -65,12 +66,32 @@ export function BookingFlow() {
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState<Completed | null>(null);
   const completionTracked = useRef(false);
+  const whatsappRedirected = useRef(false);
   const pricing = useMemo(
     () => calculateTicketPricing(quantity, prices),
     [quantity, prices],
   );
   const unavailable = useMemo(() => new Map(seatStatus.map((seat) => [seat.number, seat.state])), [seatStatus]);
   const availableCount = event.capacity - seatStatus.length;
+  const whatsappUrl = completed
+    ? buildWhatsAppReservationUrl({
+        reference: completed.reference,
+        eventName: "Brunch Mangais",
+        responsibleName: name,
+        phone,
+        email,
+        quantity: completed.quantity,
+        total: formatKz(completed.total),
+        pickup: completed.pickupOther || pickupPreferences.find((item) => item.code === completed.pickupPreference)?.label || completed.pickupPreference,
+        returnArea,
+        seats: completed.seats.length ? completed.seats.join(", ") : "Lista de espera",
+        passengers,
+        guardianName: minorGuardianName,
+        guardianPhone: minorGuardianPhone,
+        playlistSuggestion,
+        kidsInterest,
+      })
+    : "";
   const responsibleValid =
     name.trim().length >= 4 &&
     /^(?:\+?244\s?)?9(?:[\s-]?\d){8}$/.test(phone.trim()) &&
@@ -100,6 +121,12 @@ export function BookingFlow() {
     const analyticsWindow = window as Window & { dataLayer?: Array<Record<string, string>> };
     analyticsWindow.dataLayer?.push({ event: "pre_reservation_completed", reference: completed.reference });
   }, [completed]);
+
+  useEffect(() => {
+    if (!whatsappUrl || whatsappRedirected.current) return;
+    whatsappRedirected.current = true;
+    window.location.assign(whatsappUrl);
+  }, [whatsappUrl]);
 
   useEffect(() => {
     setPassengers((current) => Array.from(
@@ -249,6 +276,7 @@ export function BookingFlow() {
           <h1>Inscrição recebida! 💜</h1>
           <p>Obrigado por escolheres a FestGo! A tua inscrição para o Brunch Mangais foi registada com sucesso.</p>
           <p>A nossa equipa irá contactar-te através do número indicado para confirmar a disponibilidade, a tua reserva e os próximos passos para o pagamento.</p>
+          <p><b>A abrir o WhatsApp com os dados da tua pré-reserva…</b></p>
           <div className="pre-alert">A inscrição ainda não garante o lugar. A reserva só ficará confirmada após o pagamento validado e a confirmação operacional da viagem.</div>
           <dl className="pre-summary-list">
             <Summary label="Bilhetes" value={`${completed.quantity} · ${pricingLabel(pricing.composition)}`} />
@@ -257,6 +285,7 @@ export function BookingFlow() {
             <Summary label="Lugares pretendidos" value={completed.seats.length ? completed.seats.join(", ") : "Lista de espera"} />
           </dl>
           <p className="pre-signoff">Tu curtes, nós conduzimos. 🚌</p>
+          <a href={whatsappUrl} className="home-cta">Continuar no WhatsApp</a>
           <Link href="/" className="home-cta">Voltar ao início</Link>
         </div>
       </main>
