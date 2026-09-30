@@ -1,9 +1,11 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  checkWiPaySignature,
   createWiPayPayment,
+  matchesWiPayHmac,
   resetWiPayTokenCacheForTests,
-  verifyWiPaySignature,
+  wipayCallbackUrl,
 } from "./wipay";
 
 describe("WiPay Angola integration", () => {
@@ -18,6 +20,19 @@ describe("WiPay Angola integration", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetWiPayTokenCacheForTests();
+  });
+
+  it("uses the registered production callback and a separate sandbox test callback", () => {
+    process.env.WIPAY_CALLBACK_URL = "https://festgo.mazanga.digital/api/webhooks/wipay";
+    expect(wipayCallbackUrl("https://festgo.mazanga.digital")).toBe(process.env.WIPAY_CALLBACK_URL);
+    expect(wipayCallbackUrl("https://festgo.mazanga.digital", true)).toBe("https://festgo.mazanga.digital/api/webhooks/wipay-test");
+    process.env.WIPAY_CALLBACK_ORIGIN = "https://stale-preview.vercel.app";
+    expect(wipayCallbackUrl("https://festgo.mazanga.digital", true)).toBe("https://festgo.mazanga.digital/api/webhooks/wipay-test");
+    delete process.env.WIPAY_CALLBACK_ORIGIN;
+    process.env.WIPAY_CALLBACK_URL = "https://festgo.mazanga.digital/pagamento";
+    expect(() => wipayCallbackUrl("https://festgo.mazanga.digital")).toThrow("inválida");
+    delete process.env.WIPAY_CALLBACK_URL;
+    expect(() => wipayCallbackUrl("https://festgo.mazanga.digital")).toThrow("não está configurada");
   });
 
   it("exchanges sandbox credentials and preserves the server-calculated amount", async () => {
@@ -163,20 +178,15 @@ describe("WiPay Angola integration", () => {
   });
 
   it("verifies the documented hex HMAC over the raw callback body", async () => {
+    const exampleBody = '{"id":"pay_exemplo_001","amount":"950.00","status":"accepted","status_reason":"2000","status_datetime":"2026-09-30T21:47:03Z","currency":"aoa","customer":"900000000","reference_id":"PROBE-EXP-EXEMPLO","processor":"gpo"}';
+    expect(Buffer.byteLength(exampleBody)).toBe(219);
+    expect(matchesWiPayHmac(exampleBody, "c5a9bc7f7c2298c3199e90dff2c7ab3a583a0b6f62192038587271b22269523a", "exemplo-signature-token-nao-real")).toBe(true);
     const token = "signature-token-with-more-than-thirty-two-characters";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        Response.json({
-          access_token: token,
-          expires_in: 86_400,
-          scope: "signature",
-        }),
-      ),
-    );
     const raw = '{"status":"accepted","amount":"100.00"}';
     const signature = createHmac("sha256", token).update(raw).digest("hex");
-    await expect(verifyWiPaySignature(raw, signature)).resolves.toBe(true);
-    await expect(verifyWiPaySignature(`${raw} `, signature)).resolves.toBe(false);
+    expect(matchesWiPayHmac(raw, signature, token)).toBe(true);
+    expect(matchesWiPayHmac(`${raw} `, signature, token)).toBe(false);
+    await expect(checkWiPaySignature(raw, null)).resolves.toBe("missing");
+    await expect(checkWiPaySignature(raw, "example-signature")).resolves.toBe("malformed");
   });
 });

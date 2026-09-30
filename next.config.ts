@@ -6,6 +6,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/(api|reserva|bilhete|checkout|confirmar|pagamento|operacoes)/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      },
+      {
         source: "/admin/:path*",
         headers: [
           {
@@ -26,7 +34,7 @@ const nextConfig: NextConfig = {
           },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "X-DNS-Prefetch-Control", value: "off" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Referrer-Policy", value: "no-referrer" },
           {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(), geolocation=()",
@@ -34,7 +42,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://rouxavcvorjiwhpjhsye.supabase.co https://api.ziett.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests",
+              "default-src 'self'; img-src 'self' data: https://www.clarity.ms https://*.clarity.ms https://c.bing.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://www.clarity.ms https://*.clarity.ms; connect-src 'self' https://rouxavcvorjiwhpjhsye.supabase.co https://api.ziett.co https://www.clarity.ms https://*.clarity.ms https://c.bing.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests",
           },
         ],
       },

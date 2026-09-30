@@ -1,4 +1,10 @@
 import { prisma } from "@/lib/db";
+import { finalizeVerifiedPayment, type VerifiedPayment } from "@/lib/payment-finalization";
+import {
+  EkwanzaError,
+  getEkwanzaCharge,
+  mapEkwanzaChargeStatus,
+} from "@/lib/integrations/ekwanza";
 
 export type PaymentsApiMethod = "multicaixa" | "reference";
 
@@ -382,122 +388,57 @@ export function mapStatus(status: string) {
   }
 }
 
-export async function reconcilePayment(localPaymentId: string) {
+export async function reconcilePayment(localPaymentId: string, webhook?: VerifiedPayment["webhook"]) {
   const local = await prisma.payment.findUnique({
     where: { id: localPaymentId },
-    include: { reservation: { include: { passengers: true, customer: true } } },
+    include: { reservation: { include: { customer: true } } },
   });
-  if (!local?.providerPaymentId)
+  if (!local?.providerPaymentId || local.provider !== "paygo")
     throw new PaymentsApiError("Pagamento não encontrado.", 404);
   const remote = await getPayment(local.providerPaymentId);
-  const details =
-    local.providerDetails &&
-    typeof local.providerDetails === "object" &&
-    !Array.isArray(local.providerDetails)
-      ? (local.providerDetails as Record<string, unknown>)
-      : {};
+  const details = objectValue(local.providerDetails);
   if (
     remote.amount !== Number(local.amount) ||
-    remote.currency !== local.currency ||
+    remote.currency.toUpperCase() !== local.currency.toUpperCase() ||
     !paymentMethodMatches(local.method, remote.payment_method) ||
     (remote.product_id && remote.product_id !== details.productId) ||
-    (remote.customer?.email &&
-      remote.customer.email.toLowerCase() !==
-        local.reservation.customer.email?.toLowerCase())
-  ) {
-    throw new PaymentsApiError(
-      "O pagamento remoto não corresponde à reserva guardada.",
-    );
-  }
-
-  const status = mapStatus(remote.status);
-  await prisma.$transaction(async (tx) => {
-    await tx.payment.update({
-      where: { id: local.id },
-      data: {
-        status,
-        rawStatus: remote.status,
-        providerReference:
-          remote.merchant_transaction_id ?? local.providerReference,
-        reconciledAt: new Date(),
-      },
-    });
-    if (status === "SUCCEEDED") {
-      const awaitingConfirmation = await tx.reservation.updateMany({
-        where: {
-          id: local.reservationId,
-          status: {
-            in: [
-              "HELD",
-              "PAYMENT_PENDING",
-              "AWAITING_PAYMENT",
-              "PAYMENT_UNCERTAIN",
-              "CANCELLED",
-              "EXPIRED",
-            ],
-          },
-        },
-        data: { status: "PAYMENT_UNCERTAIN", paidAt: new Date() },
-      });
-      if (awaitingConfirmation.count)
-        await tx.auditLog.create({
-          data: {
-            action: "PAYMENT_AWAITING_ADMIN_CONFIRMATION",
-            entityType: "Reservation",
-            entityId: local.reservationId,
-            metadata: { paymentId: local.id, provider: local.provider },
-          },
-        });
-    } else if (status === "REFUNDED") {
-      await tx.reservation.update({
-        where: { id: local.reservationId },
-        data: { status: "REFUNDED" },
-      });
-      await tx.ticket.updateMany({
-        where: {
-          passengerId: {
-            in: local.reservation.passengers.map((passenger) => passenger.id),
-          },
-        },
-        data: { status: "REVOKED", revokedAt: new Date() },
-      });
-      await tx.seatPreference.updateMany({
-        where: { reservationId: local.reservationId, releasedAt: null },
-        data: { status: "RELEASED", releasedAt: new Date() },
-      });
-    } else if (status === "UNKNOWN") {
-      await tx.reservation.update({
-        where: { id: local.reservationId },
-        data: { status: "PAYMENT_UNCERTAIN" },
-      });
-    } else if (status === "PENDING" && local.reservation.status !== "PAID") {
-      await tx.reservation.update({
-        where: { id: local.reservationId },
-        data: { status: "AWAITING_PAYMENT" },
-      });
-    } else if (status === "FAILED" && local.reservation.status !== "PAID") {
-      await tx.reservation.update({
-        where: { id: local.reservationId },
-        data: { status: "EXPIRED" },
-      });
-      await tx.seatPreference.updateMany({
-        where: { reservationId: local.reservationId, releasedAt: null },
-        data: { status: "RELEASED", releasedAt: new Date() },
-      });
-    } else if (status === "CANCELLED" && local.reservation.status !== "PAID") {
-      await tx.reservation.update({
-        where: { id: local.reservationId },
-        data: { status: "CANCELLED" },
-      });
-      await tx.seatPreference.updateMany({
-        where: { reservationId: local.reservationId, releasedAt: null },
-        data: { status: "RELEASED", releasedAt: new Date() },
-      });
-    }
-  });
-  return {
-    status,
+    (local.providerReference && remote.merchant_transaction_id !== local.providerReference) ||
+    (remote.customer?.email && remote.customer.email.toLowerCase() !== local.reservation.customer.email?.toLowerCase())
+  ) throw new PaymentsApiError("O pagamento remoto não corresponde à reserva guardada.", 409);
+  return finalizeVerifiedPayment({
+    localPaymentId: local.id,
+    provider: "paygo",
+    providerPaymentId: remote.id,
+    providerReference: remote.merchant_transaction_id,
+    amount: remote.amount,
+    currency: remote.currency,
+    status: mapStatus(remote.status),
     rawStatus: remote.status,
-    reservationReference: local.reservation.reference,
-  };
+    webhook,
+  });
+}
+
+export async function reconcileEkwanzaPayment(localPaymentId: string, webhook?: VerifiedPayment["webhook"]) {
+  const local = await prisma.payment.findUnique({ where: { id: localPaymentId } });
+  if (!local?.providerPaymentId || local.provider !== "ekwanza")
+    throw new EkwanzaError("Pagamento É-Kwanza não encontrado.", 404);
+  const remote = await getEkwanzaCharge(local.providerPaymentId);
+  if (
+    remote.id !== local.providerPaymentId ||
+    remote.merchantTransactionId !== local.providerReference ||
+    remote.amount !== Number(local.amount) ||
+    remote.currency.toUpperCase() !== local.currency.toUpperCase() ||
+    (remote.source && remote.source.toUpperCase() !== (local.method === "gpo" ? "GPO" : "REF"))
+  ) throw new EkwanzaError("A cobrança É-Kwanza não corresponde à reserva guardada.", 409, "PAYMENT_MISMATCH");
+  return finalizeVerifiedPayment({
+    localPaymentId: local.id,
+    provider: "ekwanza",
+    providerPaymentId: remote.id,
+    providerReference: remote.merchantTransactionId,
+    amount: remote.amount,
+    currency: remote.currency,
+    status: mapEkwanzaChargeStatus(remote.status, remote.statusCode),
+    rawStatus: `${remote.status}:${remote.statusCode}`,
+    webhook,
+  });
 }

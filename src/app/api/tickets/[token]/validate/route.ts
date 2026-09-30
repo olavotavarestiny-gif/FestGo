@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { staffFromRequest } from "@/lib/auth";
-import { clientIp } from "@/lib/rate-limit";
+import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 const inputSchema = z.object({
@@ -32,6 +32,8 @@ export async function GET(
   const user = await staffFromRequest(request);
   if (!user)
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  try { await enforceRateLimit({ namespace: "scanner-read", identifier: user.id, limit: 180, windowMs: 60_000 }); }
+  catch { return NextResponse.json({ error: "Demasiadas consultas. Aguarda um momento." }, { status: 429 }); }
   const ticket = await findTicket((await params).token);
   if (!ticket)
     return NextResponse.json(
@@ -42,6 +44,7 @@ export async function GET(
   return NextResponse.json({
     passenger: ticket.passenger.fullName,
     event: reservation.event.name,
+    eventDate: reservation.event.eventDate,
     pickupPoint: reservation.pickupPoint?.name ?? "Por confirmar",
     status: ticket.status,
     reservationStatus: reservation.status,
@@ -75,6 +78,11 @@ export async function POST(
     );
   try {
     const validation = await prisma.$transaction(async (tx) => {
+      // Same lock order as payment/refund finalization: a revoked ticket cannot race check-in.
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${ticket.passenger.reservation.eventId} FOR UPDATE`;
+      const current = await tx.ticket.findUniqueOrThrow({ where: { id: ticket.id }, include: { passenger: { include: { reservation: { include: { event: true } } } } } });
+      if (current.status !== "VALID" || current.revokedAt || current.passenger.reservation.status !== "PAID" || current.passenger.reservation.event.status === "CANCELLED")
+        throw new Error("TICKET_REVOKED");
       const created = await tx.ticketValidation.create({
         data: {
           ticketId: ticket.id,
@@ -102,6 +110,8 @@ export async function POST(
       validatedAt: validation.validatedAt,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "TICKET_REVOKED")
+      return NextResponse.json({ error: "Bilhete cancelado, reembolsado ou não pago." }, { status: 409 });
     if (
       typeof error === "object" &&
       error &&

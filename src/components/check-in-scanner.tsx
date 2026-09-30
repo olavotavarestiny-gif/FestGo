@@ -103,11 +103,12 @@ export function CheckInScanner({
       if (timer) clearInterval(timer);
       stream?.getTracks().forEach((track) => track.stop());
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- camera state controls this stream's lifetime.
   }, [camera]);
   useEffect(() => {
     if (initialToken) void lookup(initialToken);
     // The QR token is immutable for this mounted page.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the QR token is immutable for this mounted page.
   }, [initialToken]);
   return (
     <section className="card mt-8 p-6">

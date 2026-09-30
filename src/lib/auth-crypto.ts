@@ -30,6 +30,7 @@ export function verifyPassword(password: string, encoded: string) {
   const [algorithm, salt, stored] = encoded.split("$");
   if (algorithm !== "scrypt" || !salt || !stored) return false;
   const expected = Buffer.from(stored, "base64url");
+  if (expected.length !== 64 || salt.length > 100) return false;
   const supplied = scryptSync(password, salt, expected.length);
   return (
     expected.length === supplied.length && timingSafeEqual(expected, supplied)
@@ -45,8 +46,9 @@ export function createSessionToken(payload: SessionPayload) {
 }
 
 export function verifySessionToken(token: string): SessionPayload | null {
-  const [encoded, suppliedSignature] = token.split(".");
-  if (!encoded || !suppliedSignature) return null;
+  if (token.length > 2048) return null;
+  const [encoded, suppliedSignature, extra] = token.split(".");
+  if (!encoded || !suppliedSignature || extra || !process.env.AUTH_SECRET || process.env.AUTH_SECRET.length < 32) return null;
   const expectedSignature = createHmac("sha256", secret())
     .update(encoded)
     .digest();
@@ -61,11 +63,11 @@ export function verifySessionToken(token: string): SessionPayload | null {
       Buffer.from(encoded, "base64url").toString("utf8"),
     ) as SessionPayload;
     if (
-      !payload.userId ||
+      typeof payload.userId !== "string" || !payload.userId ||
       !["ADMIN", "OPERATOR"].includes(payload.role) ||
       !Number.isInteger(payload.sessionVersion) ||
       payload.sessionVersion < 1 ||
-      payload.exp <= Math.floor(Date.now() / 1000)
+      !Number.isSafeInteger(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)
     )
       return null;
     return payload;

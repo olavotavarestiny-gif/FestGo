@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   const challengeId =
     typeof body?.challengeId === "string" ? body.challengeId : "";
   const code = typeof body?.code === "string" ? body.code : "";
-  if (!phone || !challengeId || !/^\d{6}$/.test(code)) {
+  if (!phone || !challengeId || challengeId.length > 40 || !/^\d{6}$/.test(code)) {
     return NextResponse.json(
       { error: "Código ou número inválido." },
       { status: 400 },
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await enforceRateLimit({ namespace: "otp-verify-ip", identifier: clientIp(request), limit: 30, windowMs: 15 * 60_000 });
     const challenge = await prisma.sMSVerification.findUnique({
       where: { id: challengeId },
     });
@@ -56,6 +58,8 @@ export async function POST(request: Request) {
       where: {
         id: challenge.id,
         verifiedAt: null,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
         attempts: { lt: challenge.maxAttempts },
       },
       data: { attempts: { increment: 1 } },
@@ -87,7 +91,7 @@ export async function POST(request: Request) {
     }
 
     const verified = await prisma.sMSVerification.updateMany({
-      where: { id: challenge.id, verifiedAt: null },
+      where: { id: challenge.id, verifiedAt: null, usedAt: null, expiresAt: { gt: new Date() } },
       data: { verifiedAt: new Date() },
     });
     if (!verified.count)
@@ -96,7 +100,9 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     return NextResponse.json({ verified: true });
-  } catch {
+  } catch (error) {
+    if (typeof error === "object" && error && "status" in error && error.status === 429)
+      return NextResponse.json({ error: "Demasiadas tentativas. Tenta mais tarde." }, { status: 429 });
     return NextResponse.json(
       { error: "O serviço de verificação está temporariamente indisponível." },
       { status: 503 },

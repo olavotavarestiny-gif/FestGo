@@ -10,37 +10,14 @@ const options = [
   ["NO_RESPONSE", "Sem resposta"],
 ] as const;
 
-type ApprovalSms = {
-  status: string;
-  attempts: number;
-  providerMessageId: string | null;
-  providerStatus: string | null;
-  sentAt: string | null;
-  lastError: string | null;
-} | null;
-
-type SmsPreview = {
-  content: string;
-  characterCount: number;
-  encoding: string;
-  segments: number;
-  isSingleSegment: boolean;
-};
-
 export function PreReservationAdminActions({
   id,
   current,
   reservationStatus,
-  canResendSms,
-  approvalSms,
-  approvalPreview,
 }: {
   id: string;
   current: string;
   reservationStatus: string;
-  canResendSms: boolean;
-  approvalSms: ApprovalSms;
-  approvalPreview: SmsPreview;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(current);
@@ -79,26 +56,13 @@ export function PreReservationAdminActions({
 
   async function approve() {
     if (!window.confirm("Aprovar esta pré-reserva? O pagamento continuará por confirmar.")) return;
-    await action({ action: "APPROVE" }, "Pré-reserva aprovada. Já podes enviar o SMS.");
-  }
-
-  async function sendApprovalSms() {
-    if (!window.confirm(`Enviar agora este SMS para o cliente?\n\n${approvalPreview.content}`)) return;
-    await action({ action: "SEND_APPROVAL_SMS" }, "SMS de aprovação aceite pela Ziett.");
-  }
-
-  async function resendRegistrationSms() {
-    await action({ action: "RESEND_SMS" }, "SMS de inscrição reagendado.");
+    await action({ action: "APPROVE" }, "Pré-reserva aprovada. O link de checkout pode ser enviado manualmente.");
   }
 
   async function release() {
     if (!window.confirm("Cancelar esta inscrição e libertar os lugares pretendidos?")) return;
     await action({ action: "RELEASE" }, "Inscrição cancelada e lugares libertados.");
   }
-
-  const approvalSent = approvalSms?.status === "SENT";
-  const approvalSending = approvalSms?.status === "PROCESSING";
-  const retryAllowed = (approvalSms?.attempts ?? 0) < 3;
 
   return (
     <div className="space-y-5">
@@ -124,18 +88,6 @@ export function PreReservationAdminActions({
         </section>
       )}
 
-      {reservationStatus === "PAYMENT_PENDING" && (
-        <section className="admin-action-card">
-          <div className="flex items-center justify-between gap-3"><h3>SMS de aprovação</h3><span className={approvalPreview.isSingleSegment ? "sms-cost-ok" : "sms-cost-warning"}>{approvalPreview.segments} segmento{approvalPreview.segments === 1 ? "" : "s"}</span></div>
-          <blockquote className="sms-preview">{approvalPreview.content}</blockquote>
-          <div className="sms-meta"><span>{approvalPreview.characterCount}/160 caracteres</span><span>{approvalPreview.encoding}</span><span>{approvalSms?.attempts ?? 0}/3 tentativas</span></div>
-          {!approvalPreview.isSingleSegment && <p className="sms-warning">Aviso: a mensagem ultrapassa um segmento e o envio está bloqueado.</p>}
-          {approvalSms?.lastError && <p className="sms-warning">Última falha: {approvalSms.lastError}</p>}
-          {approvalSent ? <p className="mt-3 text-xs font-bold text-emerald-300">SMS enviado em {approvalSms.sentAt ? new Date(approvalSms.sentAt).toLocaleString("pt-AO") : "data registada"}. Estado Ziett: {approvalSms.providerStatus ?? "aceite"}.</p> : <button className="admin-approve mt-3" disabled={busy || approvalSending || !approvalPreview.isSingleSegment || !retryAllowed} onClick={sendApprovalSms}>{approvalSms?.status === "FAILED" ? "Tentar envio novamente" : approvalSending ? "Envio em processamento…" : "Enviar SMS de aprovação"}</button>}
-        </section>
-      )}
-
-      {canResendSms && active && <button className="admin-secondary-action" disabled={busy} onClick={resendRegistrationSms}>Reenviar SMS de inscrição</button>}
       {active && <button className="admin-danger admin-secondary-action" disabled={busy} onClick={release}>Cancelar e libertar lugares</button>}
       {message && <p role="status" className="text-sm text-violet-200">{message}</p>}
     </div>

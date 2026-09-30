@@ -29,8 +29,18 @@ export default async function IntegratedTestPage({
   if (!reservation) notFound();
   const details = jsonObject(reservation.payment?.providerDetails ?? null);
   const paymentUrl = typeof details.paymentUrl === "string" ? details.paymentUrl : null;
+  const qrCode = typeof details.qrCode === "string" ? details.qrCode : null;
+  const expirationDate = typeof details.expirationDate === "string" ? details.expirationDate : null;
   const lastWebhook = reservation.payment?.webhookEvents[0];
-  const paymentProvider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
+  const paymentProvider =
+    reservation.payment?.provider === "ekwanza-ticket"
+      ? "ekwanza-ticket"
+      : reservation.payment?.provider === "ekwanza"
+      ? "ekwanza"
+      : reservation.payment?.provider === "wipay" ||
+          (!reservation.payment && process.env.PAYMENTS_PROVIDER === "wipay")
+        ? "wipay"
+        : "paygo";
 
   return (
     <main className="min-h-screen bg-[#100e17] p-4 text-white sm:p-6">
@@ -47,11 +57,11 @@ export default async function IntegratedTestPage({
               <div><dt>Lugar fictício</dt><dd>{reservation.testSeat}</dd></div>
               <div><dt>Ponto de recolha</dt><dd>{reservation.pickupPreference}</dd></div>
               <div><dt>Valor exclusivo deste teste</dt><dd>{formatKz(TEST_AMOUNT)}</dd></div>
-              <div><dt>Produto fixo</dt><dd className="break-all">{paymentProvider === "wipay" ? "WiPay Sandbox" : TEST_PRODUCT_ID}</dd></div>
+              <div><dt>Produto fixo</dt><dd className="break-all">{paymentProvider === "wipay" ? "WiPay" : paymentProvider === "ekwanza" ? "É-Kwanza GPO/Referência" : paymentProvider === "ekwanza-ticket" ? "É-Kwanza código/QR" : TEST_PRODUCT_ID}</dd></div>
               <div><dt>Estado</dt><dd>{reservation.status}</dd></div>
               {reservation.payment?.providerPaymentId && <div><dt>Transacção</dt><dd className="break-all">{reservation.payment.providerPaymentId}</dd></div>}
               {typeof details.diagnosticDetail === "string" && <div><dt>Host devolvido</dt><dd className="break-all">{details.diagnosticDetail}</dd></div>}
-              {lastWebhook && <div><dt>Último webhook</dt><dd>{lastWebhook.signatureValid ? "Assinatura válida" : "Assinatura inválida"} · {lastWebhook.processedAt ? "processado" : "pendente"}</dd></div>}
+              {lastWebhook && <div><dt>Último webhook</dt><dd>{paymentProvider === "ekwanza" ? "Sem assinatura definida na documentação v2.7" : lastWebhook.signatureValid ? "Assinatura válida" : "Assinatura inválida"} · {lastWebhook.processedAt ? "processado" : "pendente"}</dd></div>}
             </dl>
             {reservation.ticket && <Link className="btn-primary mt-6" href={`/admin/teste-gateway/bilhete/${reservation.ticket.publicToken}`}>Visualizar bilhete de teste <ExternalLink size={16} /></Link>}
           </section>
@@ -59,7 +69,7 @@ export default async function IntegratedTestPage({
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet/15 text-violet-300"><ShieldCheck size={21} /></span>
             <h2 className="mt-5 font-black">Pagamento integrado</h2>
             <p className="mt-2 text-xs leading-5 text-white/40">A cobrança só é criada depois da tua confirmação. O valor vem exclusivamente do servidor.</p>
-            <div className="mt-5"><IntegratedTestPaymentActions reservationId={reservation.id} paymentExists={Boolean(reservation.payment)} paid={reservation.status === "PAID"} initialPaymentUrl={paymentUrl} paymentProvider={paymentProvider} /></div>
+            <div className="mt-5"><IntegratedTestPaymentActions reservationId={reservation.id} paymentExists={Boolean(reservation.payment)} paid={reservation.status === "PAID"} initialPaymentUrl={paymentUrl} initialQrCode={qrCode} initialExpirationDate={expirationDate} paymentProvider={paymentProvider} /></div>
           </aside>
         </div>
       </div>

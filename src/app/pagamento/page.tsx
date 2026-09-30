@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { PaymentResult } from "@/components/payment-result";
+
+export const metadata: Metadata = { title: "Estado do pagamento — FestGo", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 export default async function PaymentPage({
   searchParams,

@@ -46,6 +46,7 @@ export function TestCheckInScanner({ initialToken = "" }: { initialToken?: strin
     if (response.ok) await lookup(token);
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- initial token is immutable for this mounted scanner.
   useEffect(() => { if (initialToken) void lookup(initialToken); }, [initialToken]);
 
   return (

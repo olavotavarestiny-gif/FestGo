@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { analyzeSms, smsTemplates } from "./sms";
 
 describe("SMS cost estimation", () => {
-  it("keeps registration and approval messages in one GSM-7 segment", () => {
+  it("keeps OTP messages in one GSM-7 segment", () => {
     for (const content of [
-      smsTemplates.preReservationReceived("FGP-2026-ABC123"),
-      smsTemplates.preReservationApproved("FGP-2026-ABC123"),
+      smsTemplates.otp("123456"),
+      smsTemplates.otp("123456", 10),
     ]) {
       const result = analyzeSms(content);
       expect(result.encoding).toBe("GSM-7");
@@ -40,9 +40,9 @@ describe("SMS cost estimation", () => {
       "https://festgo.mazanga.digital/confirmar/token-seguro",
       "FGP-2026-ABC123",
     );
-    expect(content).toContain("FestGo 💜 A tua pré-reserva está pronta para pagamento!");
+    expect(content).toContain("Conclui o pagamento no site:");
     const result = analyzeSms(content);
-    expect(result.encoding).toBe("UCS-2");
-    expect(result.segments).toBeGreaterThan(1);
+    expect(result.encoding).toBe("GSM-7");
+    expect(result.segments).toBe(1);
   });
 });

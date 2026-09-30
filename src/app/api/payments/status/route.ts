@@ -1,108 +1,64 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { reconcilePayment } from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
 import { verifyReservationToken } from "@/lib/reservation-access";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
-import { arePaymentsEnabled } from "@/lib/pre-reservations";
 import { createTicketBundleToken } from "@/lib/ticket-access";
+import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
+import { publicPaymentDetails, reconcileProviderPayment } from "@/lib/payment-providers";
+import { validWhatsappGroupUrl } from "@/lib/config";
 
 export const runtime = "nodejs";
-const schema = z.object({
-  reservationId: z.string().min(8).max(40),
-  accessToken: z.string().min(32).max(100),
-});
+const schema = z.object({ reservationId: z.string().min(8).max(40), accessToken: z.string().min(32).max(100) });
+const include = { event: true, route: true, pickupPoint: true, payments: { orderBy: { createdAt: "desc" as const } } } as const;
 
 export async function POST(request: Request) {
-  if (!arePaymentsEnabled())
-    return NextResponse.json(
-      { error: "Os pagamentos estão desactivados durante as pré-reservas." },
-      { status: 409 },
-    );
   const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success)
-    return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
-  if (
-    !verifyReservationToken(parsed.data.reservationId, parsed.data.accessToken)
-  )
-    return NextResponse.json(
-      { error: "Reserva não autorizada." },
-      { status: 403 },
-    );
+  if (!parsed.success) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
+  if (!verifyReservationToken(parsed.data.reservationId, parsed.data.accessToken))
+    return NextResponse.json({ error: "Reserva não autorizada." }, { status: 403 });
   try {
-    await enforceRateLimit({
-      namespace: "payment-status",
-      identifier: clientIp(request),
-      limit: 30,
-      windowMs: 10 * 60_000,
-    });
-    const provider = process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo";
-    const reservation = await prisma.reservation.findUnique({
-      where: { id: parsed.data.reservationId },
-      include: {
-        event: true,
-        payments: {
-          where: { provider },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
-    });
-    const payment = reservation?.payments[0];
-    if (!payment?.providerPaymentId)
-      return NextResponse.json(
-        { error: "Ainda não existe pagamento consultável." },
-        { status: 404 },
-      );
-    const result =
-      provider === "wipay"
-        ? {
-            status: payment.status,
-            rawStatus: payment.rawStatus,
-            reservationReference: reservation!.reference,
-          }
-        : await reconcilePayment(payment.id);
-    const currentReservation = await prisma.reservation.findUnique({
-      where: { id: parsed.data.reservationId },
-      select: { status: true },
-    });
-    const administrativelyConfirmed = currentReservation?.status === "PAID";
-    const ticketUrl =
-      result.status === "SUCCEEDED" && administrativelyConfirmed && reservation
-        ? (() => {
-            const expiry = new Date(
-              (reservation.event.returnAt ?? reservation.event.eventDate).getTime() +
-                7 * 24 * 60 * 60_000,
-            );
-            const token = createTicketBundleToken(
-              reservation.reference,
-              expiry,
-            );
-            return `/reserva/${encodeURIComponent(reservation.reference)}/bilhetes?token=${encodeURIComponent(token)}`;
-          })()
-        : undefined;
+    await enforceRateLimit({ namespace: "payment-status", identifier: clientIp(request), limit: 120, windowMs: 10 * 60_000 });
+    let reservation = await prisma.reservation.findUnique({ where: { id: parsed.data.reservationId }, include });
+    if (!reservation) return NextResponse.json({ error: "Reserva não encontrada." }, { status: 404 });
+    let payment = reservation.payments.find((item) => item.status === "SUCCEEDED") ?? reservation.payments[0];
+    if (payment?.providerPaymentId && ["CREATED", "PENDING", "UNKNOWN"].includes(payment.status)) {
+      const result = await reconcileProviderPayment(payment, reservation.reference);
+      if (result.newlyConfirmed) schedulePostPaymentJobs(request);
+      reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservation.id }, include });
+      payment = reservation.payments.find((item) => item.status === "SUCCEEDED") ?? reservation.payments[0];
+    }
+    const paid = reservation.status === "PAID" && payment?.status === "SUCCEEDED";
+    const ticketUrl = paid ? (() => {
+      const expiry = new Date((reservation.event.returnAt ?? reservation.event.eventDate).getTime() + 7 * 24 * 60 * 60_000);
+      const token = createTicketBundleToken(reservation.reference, expiry);
+      return `/reserva/${encodeURIComponent(reservation.reference)}/bilhetes?token=${encodeURIComponent(token)}`;
+    })() : undefined;
+    const group = reservation.route?.whatsappGroupUrl;
+    const canRetry = !paid && ["HELD", "PAYMENT_PENDING", "AWAITING_PAYMENT"].includes(reservation.status) &&
+      Boolean(reservation.holdExpiresAt && reservation.holdExpiresAt > new Date()) &&
+      (!payment || ["FAILED", "CANCELLED"].includes(payment.status));
     return NextResponse.json({
-      ...result,
-      status:
-        result.status === "SUCCEEDED" && !administrativelyConfirmed
-          ? "AWAITING_CONFIRMATION"
-          : result.status,
+      status: paid ? "SUCCEEDED" : payment?.status === "SUCCEEDED" ? "AWAITING_CONFIRMATION" : payment?.status ?? "NOT_STARTED",
+      reservationStatus: reservation.status,
+      reservationReference: reservation.reference,
+      reference: reservation.reference,
       ticketUrl,
-    });
+      whatsappGroupUrl: paid && group && validWhatsappGroupUrl(group) ? group : undefined,
+      eventName: reservation.event.name,
+      eventDate: reservation.event.eventDate,
+      quantity: reservation.quantity,
+      total: Number(reservation.totalAmount),
+      currency: reservation.currency,
+      pickupName: reservation.pickupPoint?.name ?? reservation.pickupPreference,
+      departureAt: reservation.pickupPoint?.departureAt,
+      holdExpiresAt: reservation.holdExpiresAt,
+      details: publicPaymentDetails(payment?.providerDetails ?? null),
+      canRetry,
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error &&
-      "status" in error &&
-      error.status === 429
-    )
-      return NextResponse.json(
-        { error: "Demasiadas consultas. Aguarda alguns minutos." },
-        { status: 429 },
-      );
-    return NextResponse.json(
-      { error: "Não foi possível consultar o estado do pagamento." },
-      { status: 503 },
-    );
+    if (typeof error === "object" && error && "status" in error && error.status === 429)
+      return NextResponse.json({ error: "Demasiadas consultas. Aguarda alguns minutos." }, { status: 429 });
+    return NextResponse.json({ error: "Não foi possível consultar o estado do pagamento." }, { status: 503 });
   }
 }

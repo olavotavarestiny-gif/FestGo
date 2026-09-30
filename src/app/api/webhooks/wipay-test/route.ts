@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { verifyWiPaySignature } from "@/lib/integrations/wipay";
+import { checkWiPaySignature, WiPayError } from "@/lib/integrations/wipay";
 
 export const runtime = "nodejs";
 
@@ -20,8 +20,19 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   const raw = await request.text();
-  if (!(await verifyWiPaySignature(raw, request.headers.get("signature")).catch(() => false)))
+  let signature: Awaited<ReturnType<typeof checkWiPaySignature>>;
+  try {
+    signature = await checkWiPaySignature(raw, request.headers.get("signature"));
+  } catch (error) {
+    console.warn("WiPay test callback signature verification unavailable", {
+      reason: error instanceof WiPayError ? error.code ?? "WIPAY_ERROR" : "UNAVAILABLE",
+    });
+    return NextResponse.json({ error: "Não foi possível validar a assinatura WiPay." }, { status: 503 });
+  }
+  if (signature !== "valid") {
+    console.warn("WiPay test callback signature rejected", { reason: signature });
     return NextResponse.json({ error: "Assinatura inválida." }, { status: 401 });
+  }
   let decoded: unknown;
   try {
     decoded = JSON.parse(raw);
@@ -32,13 +43,22 @@ export async function POST(request: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: "Callback inválido." }, { status: 400 });
   const payload = parsed.data;
+  if ((payload.status === "accepted") !== (payload.status_reason === "2000"))
+    return NextResponse.json({ error: "Estado WiPay inconsistente." }, { status: 400 });
   const payment = await prisma.testPayment.findFirst({
-    where: { provider: "wipay", providerPaymentId: payload.id },
+    where: {
+      provider: "wipay",
+      OR: [
+        { providerPaymentId: payload.id },
+        { providerDetails: { path: ["referenceId"], equals: payload.reference_id } },
+      ],
+    },
     include: { testReservation: true },
   });
   const details = payment?.providerDetails as { referenceId?: string } | null;
   if (
     !payment ||
+    (payment.providerPaymentId !== null && payment.providerPaymentId !== payload.id) ||
     details?.referenceId !== payload.reference_id ||
     Number(payment.amount) !== Number(payload.amount) ||
     payment.currency.toLowerCase() !== payload.currency.toLowerCase()
@@ -62,7 +82,7 @@ export async function POST(request: Request) {
     if (payload.status === "accepted") {
       await tx.testPayment.update({
         where: { id: payment.id },
-        data: { status: "SUCCEEDED", rawStatus: "accepted", reconciledAt: new Date() },
+        data: { providerPaymentId: payload.id, status: "SUCCEEDED", rawStatus: "accepted", reconciledAt: new Date() },
       });
       await tx.testReservation.update({
         where: { id: payment.testReservationId },
@@ -76,7 +96,7 @@ export async function POST(request: Request) {
     } else if (payment.status !== "SUCCEEDED") {
       await tx.testPayment.update({
         where: { id: payment.id },
-        data: { status: "FAILED", rawStatus: `rejected:${payload.status_reason}`, reconciledAt: new Date() },
+        data: { providerPaymentId: payload.id, status: "FAILED", rawStatus: `rejected:${payload.status_reason}`, reconciledAt: new Date() },
       });
       await tx.testReservation.update({
         where: { id: payment.testReservationId },

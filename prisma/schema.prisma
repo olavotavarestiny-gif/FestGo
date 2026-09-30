@@ -158,6 +158,7 @@ model Route {
   pickupPoints PickupPoint[]
   reservations Reservation[]
   active       Boolean       @default(true)
+  whatsappGroupUrl String?
 
   @@index([eventId])
 }
@@ -237,6 +238,7 @@ model Reservation {
 
   @@index([eventId, status])
   @@index([holdExpiresAt, status])
+  @@index([routeId, status, holdExpiresAt])
   @@index([discountId])
   @@index([minorCount])
 }
@@ -474,6 +476,7 @@ model Notification {
   template          String
   status            String              @default("PENDING")
   providerMessageId String?
+  provider          String?             @default("ziett")
   providerStatus    String?
   content           String?
   encoding          String?
@@ -546,6 +549,15 @@ model RequestRateLimit {
   updatedAt   DateTime @updatedAt
 
   @@index([expiresAt])
+}
+
+model GatewayToken {
+  id                     String   @id
+  encryptedValue         String   @db.Text
+  expiresAt              DateTime
+  previousEncryptedValue String?  @db.Text
+  previousExpiresAt      DateTime?
+  updatedAt              DateTime @updatedAt
 }
 
 model AuditLog {

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createReservationToken } from "@/lib/reservation-access";
 import { Logo } from "@/components/logo";
 import { PaymentInvitationForm } from "@/components/payment-invitation-form";
 import { prisma } from "@/lib/db";
@@ -15,6 +17,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Confirmar pré-reserva — FestGo",
   robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 function unavailable() {
@@ -60,11 +63,15 @@ export default async function PaymentInvitationPage({
       Math.floor(parsed.expiresAt.getTime() / 1000) ||
     invitation.revokedAt ||
     invitation.expiresAt <= new Date() ||
-    invitation.reservation.status !== "PAYMENT_PENDING"
+    !["PAYMENT_PENDING", "HELD", "AWAITING_PAYMENT"].includes(invitation.reservation.status)
   )
     return unavailable();
 
   const reservation = invitation.reservation;
+  if (reservation.routeId && reservation.pickupPointId) {
+    if (!reservation.holdExpiresAt || reservation.holdExpiresAt <= new Date()) return unavailable();
+    redirect(`/checkout/${encodeURIComponent(reservation.id)}?token=${encodeURIComponent(createReservationToken(reservation.id))}`);
+  }
   const occupied = await prisma.seatPreference.findMany({
     where: {
       eventId: reservation.eventId,
@@ -77,6 +84,21 @@ export default async function PaymentInvitationPage({
   const pickup = pickupPreferences.find(
     (option) => option.label === reservation.pickupPreference,
   );
+  const paymentProvider =
+    process.env.PAYMENTS_PROVIDER === "wipay"
+      ? "wipay"
+      : process.env.PAYMENTS_PROVIDER === "ekwanza"
+        ? "ekwanza"
+        : "paygo";
+  const paymentProviders = new Set(
+    (process.env.PAYMENTS_AVAILABLE_PROVIDERS ?? paymentProvider)
+      .split(",")
+      .map((provider) => provider.trim().toLowerCase())
+      .filter((provider): provider is "wipay" | "paygo" | "ekwanza" =>
+        ["wipay", "paygo", "ekwanza"].includes(provider),
+      ),
+  );
+  paymentProviders.add(paymentProvider);
 
   return (
     <>
@@ -107,7 +129,8 @@ export default async function PaymentInvitationPage({
         eventDate={reservation.event.eventDate.toISOString().slice(0, 10)}
         minorAgeLimit={reservation.event.minorAgeLimit}
         paymentsEnabled={arePaymentsEnabled()}
-        paymentProvider={process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo"}
+        paymentProvider={paymentProvider}
+        paymentProviders={[...paymentProviders]}
       />
     </>
   );

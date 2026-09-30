@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { verifyWiPaySignature, WiPayError } from "@/lib/integrations/wipay";
+import { checkWiPaySignature, WiPayError } from "@/lib/integrations/wipay";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { finalizeVerifiedPayment, PaymentVerificationError } from "@/lib/payment-finalization";
+import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 
 export const runtime = "nodejs";
 
@@ -20,12 +21,6 @@ const callbackSchema = z.object({
   processor: z.string().min(1).max(80),
 });
 
-function jsonDetails(value: Prisma.JsonValue | null) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 export async function POST(request: Request) {
   try {
     await enforceRateLimit({
@@ -40,9 +35,15 @@ export async function POST(request: Request) {
 
   const rawBody = await request.text();
   try {
-    if (!(await verifyWiPaySignature(rawBody, request.headers.get("signature"))))
+    const signature = await checkWiPaySignature(rawBody, request.headers.get("signature"));
+    if (signature !== "valid") {
+      console.warn("WiPay callback signature rejected", { reason: signature });
       return NextResponse.json({ error: "Assinatura inválida." }, { status: 401 });
+    }
   } catch (error) {
+    console.warn("WiPay callback signature verification unavailable", {
+      reason: error instanceof WiPayError ? error.code ?? "WIPAY_ERROR" : "UNAVAILABLE",
+    });
     return NextResponse.json(
       {
         error:
@@ -64,6 +65,8 @@ export async function POST(request: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: "Callback inválido." }, { status: 400 });
   const payload = parsed.data;
+  if ((payload.status === "accepted") !== (payload.status_reason === "2000"))
+    return NextResponse.json({ error: "Estado WiPay inconsistente." }, { status: 400 });
   const payment = await prisma.payment.findFirst({
     where: {
       provider: "wipay",
@@ -72,15 +75,7 @@ export async function POST(request: Request) {
         { providerReference: payload.reference_id },
       ],
     },
-    include: {
-      reservation: {
-        include: {
-          customer: true,
-          passengers: true,
-          seatPreferences: { where: { releasedAt: null } },
-        },
-      },
-    },
+
   });
   if (!payment)
     return NextResponse.json({ error: "Pagamento desconhecido." }, { status: 404 });
@@ -96,136 +91,24 @@ export async function POST(request: Request) {
     );
 
   const providerEventId = `wipay:${createHash("sha256").update(rawBody).digest("hex")}`;
-  const existing = await prisma.paymentWebhookEvent.findUnique({
-    where: { providerEventId },
-  });
-  if (existing?.processedAt)
-    return NextResponse.json({ received: true, duplicate: true });
-
   try {
-    const result = await prisma.$transaction(
-      async (tx) => {
-        const webhook =
-          existing ??
-          (await tx.paymentWebhookEvent.create({
-            data: {
-              paymentId: payment.id,
-              providerEventId,
-              type: `wipay.${payload.status}`,
-              payload,
-              signatureValid: true,
-            },
-          }));
-        await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${payment.reservation.eventId} FOR UPDATE`;
-        const current = await tx.payment.findUniqueOrThrow({
-          where: { id: payment.id },
-          include: {
-            reservation: {
-              include: {
-                passengers: true,
-                seatPreferences: { where: { releasedAt: null } },
-              },
-            },
-          },
-        });
-        const details = {
-          ...jsonDetails(current.providerDetails),
-          processor: payload.processor,
-          statusReason: payload.status_reason,
-          statusDatetime: payload.status_datetime,
-        };
-        if (payload.status === "rejected") {
-          if (current.status === "SUCCEEDED" || current.reservation.status === "PAID") {
-            await tx.paymentWebhookEvent.update({
-              where: { id: webhook.id },
-              data: { processedAt: new Date() },
-            });
-            return { status: "SUCCEEDED", ticketsIssued: false } as const;
-          }
-          await tx.payment.update({
-            where: { id: current.id },
-            data: {
-              providerPaymentId: current.providerPaymentId ?? payload.id,
-              status: "FAILED",
-              rawStatus: `rejected:${payload.status_reason}`,
-              providerDetails: details,
-              reconciledAt: new Date(),
-            },
-          });
-          await tx.reservation.update({
-            where: { id: current.reservationId },
-            data: { status: "EXPIRED" },
-          });
-          await tx.seatPreference.updateMany({
-            where: { reservationId: current.reservationId, releasedAt: null },
-            data: { status: "RELEASED", releasedAt: new Date() },
-          });
-          await tx.paymentWebhookEvent.update({
-            where: { id: webhook.id },
-            data: { processedAt: new Date() },
-          });
-          return { status: "FAILED", ticketsIssued: false } as const;
-        }
-
-        await tx.payment.update({
-          where: { id: current.id },
-          data: {
-            providerPaymentId: current.providerPaymentId ?? payload.id,
-            status: "SUCCEEDED",
-            rawStatus: "accepted",
-            providerDetails: details,
-            reconciledAt: new Date(),
-          },
-        });
-        const awaitingConfirmation = current.reservation.status !== "PAID";
-        if (awaitingConfirmation) {
-          await tx.reservation.updateMany({
-            where: {
-              id: current.reservationId,
-              status: {
-                in: [
-                  "HELD",
-                  "PAYMENT_PENDING",
-                  "AWAITING_PAYMENT",
-                  "PAYMENT_UNCERTAIN",
-                  "CANCELLED",
-                  "EXPIRED",
-                ],
-              },
-            },
-            data: { status: "PAYMENT_UNCERTAIN", paidAt: new Date() },
-          });
-          await tx.auditLog.create({
-            data: {
-              action: "WIPAY_PAYMENT_AWAITING_ADMIN_CONFIRMATION",
-              entityType: "Reservation",
-              entityId: current.reservationId,
-              metadata: { paymentId: current.id, providerPaymentId: payload.id },
-            },
-          });
-        }
-        await tx.paymentWebhookEvent.update({
-          where: { id: webhook.id },
-          data: { processedAt: new Date() },
-        });
-        return {
-          status: "SUCCEEDED",
-          ticketsIssued: false,
-          awaitingAdminConfirmation: awaitingConfirmation,
-        } as const;
-      },
-      { isolationLevel: "Serializable", timeout: 10_000 },
-    );
+    const result = await finalizeVerifiedPayment({
+      localPaymentId: payment.id,
+      provider: "wipay",
+      providerPaymentId: payload.id,
+      providerReference: payload.reference_id,
+      amount: Number(payload.amount),
+      currency: payload.currency,
+      status: payload.status === "accepted" ? "SUCCEEDED" : "FAILED",
+      rawStatus: `${payload.status}:${payload.status_reason}`,
+      webhook: { providerEventId, type: `wipay.${payload.status}`, payload },
+    });
+    if (result.newlyConfirmed) schedulePostPaymentJobs(request);
     return NextResponse.json({ received: true, ...result });
   } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    )
-      return NextResponse.json({ received: true, duplicate: true });
     return NextResponse.json(
-      { error: "Não foi possível processar o callback." },
-      { status: 503 },
+      { error: error instanceof PaymentVerificationError ? error.message : "Não foi possível processar o callback." },
+      { status: error instanceof PaymentVerificationError ? 409 : 503 },
     );
   }
 }

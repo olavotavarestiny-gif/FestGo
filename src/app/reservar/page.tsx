@@ -1,28 +1,19 @@
-import { BookingFlow } from "@/components/booking-flow";
+import type { Metadata } from "next";
 import Link from "next/link";
+import { BookingFlow, PreReservationFlow } from "@/components/booking-flow";
+import { Logo } from "@/components/logo";
+import { isOtpRequired } from "@/lib/config";
+import { arePaymentsEnabled, isPreReservationMode } from "@/lib/pre-reservations";
+import { getPublicEvent } from "@/lib/public-event";
 
-export default function BookingPage() {
-  if (
-    process.env.BOOKING_MODE !== "PRE_RESERVATION" ||
-    process.env.PRE_RESERVATIONS_ENABLED !== "true"
-  ) {
-    return (
-      <main className="min-h-screen bg-[#0c0a12] px-5 py-16 text-white">
-        <div className="card mx-auto max-w-xl p-8 text-center sm:p-12">
-          <p className="eyebrow">Pré-lançamento</p>
-          <h1 className="mt-4 text-4xl font-black">
-            As pré-reservas abrem em breve.
-          </h1>
-          <p className="mt-5 leading-7 text-white/55">
-            Estamos a preparar a lista de interessados. Nenhuma cobrança está
-            activa neste momento.
-          </p>
-          <Link href="/" className="btn-secondary mt-8">
-            Voltar ao início
-          </Link>
-        </div>
-      </main>
-    );
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Reservar a tua viagem — FestGo", robots: { index: false, follow: false }, referrer: "no-referrer" };
+
+export default async function BookingPage() {
+  if (isPreReservationMode()) return <PreReservationFlow />;
+  const event = await getPublicEvent();
+  if (!arePaymentsEnabled() || !event?.salesOpen || !event.pickups.some((point) => point.available > 0)) {
+    return <main className="pre-success"><div className="pre-success-card"><Link href="/" aria-label="FestGo — início"><Logo /></Link><p className="eyebrow mt-8">FestGo · Brunch Mangais</p><h1>{event?.salesOpen && event.pickups.length > 0 && event.pickups.every((point) => point.available === 0) ? "Lugares indisponíveis de momento." : "As reservas estão a ser preparadas."}</h1><p>As vendas ficam disponíveis quando os pontos de embarque, os horários e o pagamento estiverem confirmados. Volta a consultar esta página.</p><Link href="/" className="home-cta mt-6">Voltar ao início</Link></div></main>;
   }
-  return <BookingFlow />;
+  return <BookingFlow bookingEvent={event} requiresOtp={isOtpRequired()} />;
 }

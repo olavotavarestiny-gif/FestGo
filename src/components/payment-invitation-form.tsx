@@ -32,6 +32,7 @@ export function PaymentInvitationForm({
   minorAgeLimit,
   paymentsEnabled,
   paymentProvider,
+  paymentProviders,
 }: {
   token: string;
   eventName: string;
@@ -49,7 +50,8 @@ export function PaymentInvitationForm({
   eventDate: string;
   minorAgeLimit: number;
   paymentsEnabled: boolean;
-  paymentProvider: "wipay" | "paygo";
+  paymentProvider: "wipay" | "paygo" | "ekwanza";
+  paymentProviders: Array<"wipay" | "paygo" | "ekwanza">;
 }) {
   const [quantity, setQuantity] = useState(initialQuantity);
   const [passengers, setPassengers] = useState<PassengerInput[]>(() =>
@@ -68,6 +70,7 @@ export function PaymentInvitationForm({
   const [success, setSuccess] = useState("");
   const [paymentAccess, setPaymentAccess] = useState<{ reservationId: string; accessToken: string } | null>(null);
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState(paymentProvider);
   const pricing = useMemo(() => calculateTicketPricing(quantity, prices), [quantity, prices]);
   const unavailableSet = useMemo(() => new Set(unavailable), [unavailable]);
   const availableCount = capacity - unavailable.length;
@@ -148,7 +151,7 @@ export function PaymentInvitationForm({
       const response = await fetch("/api/payments/intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...paymentAccess, method: "multicaixa" }),
+        body: JSON.stringify({ ...paymentAccess, method: "multicaixa", provider: selectedPaymentProvider }),
       });
       const result = await response.json();
       if (!response.ok && response.status !== 202)
@@ -220,10 +223,11 @@ export function PaymentInvitationForm({
             {error && <p className="pre-error" role="alert">{error}</p>}
             {success && <div className="invite-success" role="status"><Check size={18} /> {success}</div>}
             <button className="home-cta mt-6" type="button" disabled={busy || !valid} onClick={confirm}>{busy ? "A guardar…" : "Confirmar bilhetes e dados"}</button>
-            {paymentAccess && <button className="home-cta mt-3" type="button" disabled={paymentBusy} onClick={payWithExpress}>{paymentBusy ? "A iniciar…" : `Pagar ${formatKz(pricing.total)} com ${paymentProvider === "wipay" ? "WiPay" : "Multicaixa Express"}`}</button>}
+            {paymentAccess && paymentProviders.length > 1 && <label className="pre-field-label mt-5">Método de pagamento<select className="pre-field" value={selectedPaymentProvider} onChange={(event) => setSelectedPaymentProvider(event.target.value as typeof selectedPaymentProvider)}>{paymentProviders.map((provider) => <option key={provider} value={provider}>{provider === "wipay" ? "WiPay" : provider === "ekwanza" ? "AppyPay / É-Kwanza" : "PayGo · Multicaixa"}</option>)}</select></label>}
+            {paymentAccess && <button className="home-cta mt-3" type="button" disabled={paymentBusy} onClick={payWithExpress}>{paymentBusy ? "A iniciar…" : `Pagar ${formatKz(pricing.total)} com ${selectedPaymentProvider === "wipay" ? "WiPay" : selectedPaymentProvider === "ekwanza" ? "AppyPay / É-Kwanza" : "Multicaixa Express"}`}</button>}
           </div>
         </section>
-        <aside className="pre-aside"><span className="pre-aside-icon"><Users size={20} /></span><small>Resumo actualizado</small><h2>{quantity} passageiro{quantity === 1 ? "" : "s"}</h2><strong>{formatKz(pricing.total)}</strong><p>{pricingLabel(pricing.composition)} · ida e volta</p><hr /><p className="pre-aside-note">{paymentsEnabled ? `Pagamento disponível através da ${paymentProvider === "wipay" ? "WiPay" : "Multicaixa Express"}.` : "Pagamentos reais continuam desactivados. A FestGo enviará as instruções quando esta fase estiver disponível."}</p></aside>
+        <aside className="pre-aside"><span className="pre-aside-icon"><Users size={20} /></span><small>Resumo actualizado</small><h2>{quantity} passageiro{quantity === 1 ? "" : "s"}</h2><strong>{formatKz(pricing.total)}</strong><p>{pricingLabel(pricing.composition)} · ida e volta</p><hr /><p className="pre-aside-note">{paymentsEnabled ? `Pagamento disponível através de ${paymentProviders.map((provider) => provider === "wipay" ? "WiPay" : provider === "ekwanza" ? "AppyPay / É-Kwanza" : "PayGo").join(" e ")}.` : "Pagamentos reais continuam desactivados. A FestGo enviará as instruções quando esta fase estiver disponível."}</p></aside>
       </div>
     </main>
   );

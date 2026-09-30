@@ -7,6 +7,7 @@ import {
 
 beforeEach(() => {
   process.env.AUTH_SECRET = "test-secret-with-at-least-thirty-two-characters";
+  process.env.PUBLIC_BASE_URL = "https://festgo.mazanga.digital";
 });
 
 describe("payment invitation tokens", () => {

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/db";
 import { Logo } from "@/components/logo";
+import { publicBaseUrl } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,7 @@ export default async function TicketPage({
   });
   if (!ticket) notFound();
 
-  const appUrl = (
-    process.env.APP_URL ?? "https://festgo.mazanga.digital"
-  ).replace(/\/$/, "");
+  const appUrl = publicBaseUrl();
   const qr = await QRCode.toDataURL(
     `${appUrl}/operacoes/check-in?token=${ticket.publicToken}`,
     {
@@ -65,6 +64,8 @@ export default async function TicketPage({
               Reserva {reservation.reference}
             </p>
           </div>
+          {/* QR codes are generated as data URIs and already have an exact bitmap size. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={qr}
             alt="Código QR do bilhete"

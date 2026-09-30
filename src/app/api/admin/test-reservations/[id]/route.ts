@@ -8,9 +8,16 @@ import {
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
-import { createWiPayPayment, WiPayError } from "@/lib/integrations/wipay";
+import { createWiPayPayment, ensureWiPaySignatureToken, WiPayError, wipayCallbackUrl } from "@/lib/integrations/wipay";
+import { publicBaseUrl } from "@/lib/config";
+import {
+  createEkwanzaCharge,
+  createEkwanzaTicket,
+  EkwanzaError,
+} from "@/lib/integrations/ekwanza";
 import {
   jsonObject,
+  reconcileEkwanzaTestPayment,
   reconcileTestPayment,
   recoverTestPayment,
   TEST_AMOUNT,
@@ -22,6 +29,9 @@ const schema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("START_PAYMENT"),
     method: z.enum(["multicaixa", "reference"]),
+    provider: z
+      .enum(["paygo", "wipay", "ekwanza", "ekwanza-ticket"])
+      .optional(),
     confirmation: z.literal(true),
   }),
   z.object({ action: z.literal("RECONCILE") }),
@@ -44,6 +54,11 @@ function resultFrom(payment: {
     reference: details.reference ?? null,
     instructions:
       typeof details.instructions === "string" ? details.instructions : null,
+    qrCode: typeof details.qrCode === "string" ? details.qrCode : null,
+    expirationDate:
+      typeof details.expirationDate === "string"
+        ? details.expirationDate
+        : null,
     diagnosticCode:
       typeof details.diagnosticCode === "string" ? details.diagnosticCode : null,
     diagnosticDetail:
@@ -92,9 +107,12 @@ export async function POST(
           ok: true,
           ...resultFrom(reservation.payment),
         });
-      const result = reservation.payment.providerPaymentId
-        ? await reconcileTestPayment(reservation.payment.id)
-        : await recoverTestPayment(reservation.payment.id);
+      const result =
+        ["ekwanza", "ekwanza-ticket"].includes(reservation.payment.provider)
+          ? await reconcileEkwanzaTestPayment(reservation.payment.id)
+          : reservation.payment.providerPaymentId
+            ? await reconcileTestPayment(reservation.payment.id)
+            : await recoverTestPayment(reservation.payment.id);
       if (!result)
         return NextResponse.json(
           { ok: false, status: "UNKNOWN", pending: true },
@@ -139,6 +157,9 @@ export async function POST(
       ...resultFrom(reservation.payment),
     });
   let storedProviderPaymentId: string | null = null;
+  const selectedProvider =
+    parsed.data.provider ??
+    (process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo");
   try {
     await enforceRateLimit({
       namespace: "admin-integrated-test-payment",
@@ -160,32 +181,61 @@ export async function POST(
           status: "CREATED",
           rawStatus: null,
           idempotencyKey: `festgo-test-${reservation.reference}-${crypto.randomUUID()}`,
-          method: process.env.PAYMENTS_PROVIDER === "wipay" ? "hosted" : parsed.data.method,
-          provider: process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo",
+          productId:
+            selectedProvider === "wipay"
+              ? "wipay-sandbox"
+              : selectedProvider === "ekwanza-ticket"
+                ? "ekwanza-ticket"
+                : selectedProvider === "ekwanza"
+                  ? "ekwanza-gpo"
+                  : TEST_PRODUCT_ID,
+          method:
+            selectedProvider === "wipay"
+              ? "hosted"
+              : selectedProvider === "ekwanza-ticket"
+                ? "ticket"
+                : selectedProvider === "ekwanza"
+                  ? parsed.data.method === "multicaixa"
+                    ? "gpo"
+                    : "reference"
+                  : parsed.data.method,
+          provider: selectedProvider,
+          providerPaymentId: null,
+          providerDetails: {},
         },
       })
     : await prisma.testPayment.create({
         data: {
           testReservationId: reservation.id,
           idempotencyKey: `festgo-test-${reservation.reference}-${crypto.randomUUID()}`,
-          productId: process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay-sandbox" : TEST_PRODUCT_ID,
-          provider: process.env.PAYMENTS_PROVIDER === "wipay" ? "wipay" : "paygo",
-          method: process.env.PAYMENTS_PROVIDER === "wipay" ? "hosted" : parsed.data.method,
+          productId:
+            selectedProvider === "wipay"
+              ? "wipay-sandbox"
+              : selectedProvider === "ekwanza-ticket"
+                ? "ekwanza-ticket"
+                : selectedProvider === "ekwanza"
+                  ? "ekwanza-gpo"
+                  : TEST_PRODUCT_ID,
+          provider: selectedProvider,
+          method:
+            selectedProvider === "wipay"
+              ? "hosted"
+              : selectedProvider === "ekwanza-ticket"
+                ? "ticket"
+                : selectedProvider === "ekwanza"
+                  ? parsed.data.method === "multicaixa"
+                    ? "gpo"
+                    : "reference"
+                  : parsed.data.method,
           amount: TEST_AMOUNT,
           currency: TEST_CURRENCY,
         },
       });
   try {
-    if (process.env.PAYMENTS_PROVIDER === "wipay") {
-      const appUrl = new URL(
-        process.env.WIPAY_APP_URL ?? process.env.APP_URL ?? "https://festgo.mazanga.digital",
-      );
-      const callbackOrigin = new URL(
-        process.env.WIPAY_CALLBACK_ORIGIN ?? appUrl.origin,
-      );
+    if (selectedProvider === "wipay") {
+      const appUrl = new URL(publicBaseUrl());
       if (
-        appUrl.protocol !== "https:" ||
-        callbackOrigin.protocol !== "https:"
+        appUrl.protocol !== "https:"
       )
         return NextResponse.json(
           { error: "Os dominios seguros da WiPay nao estao configurados." },
@@ -202,6 +252,7 @@ export async function POST(
       );
       const failureUrl = new URL(returnUrl);
       failureUrl.searchParams.set("cancelled", "1");
+      await ensureWiPaySignatureToken();
       const remote = await createWiPayPayment({
         amount: TEST_AMOUNT,
         currency: TEST_CURRENCY,
@@ -209,15 +260,12 @@ export async function POST(
         referenceId,
         successUrl: returnUrl.toString(),
         failureUrl: failureUrl.toString(),
-        callbackUrl: new URL(
-          "/api/webhooks/wipay-test",
-          callbackOrigin,
-        ).toString(),
+        callbackUrl: wipayCallbackUrl(appUrl.origin, true),
       });
       const details = { referenceId, paymentUrl: remote.checkoutUrl };
       await prisma.$transaction([
-        prisma.testPayment.update({
-          where: { id: payment.id },
+        prisma.testPayment.updateMany({
+          where: { id: payment.id, status: { in: ["CREATED", "PENDING", "UNKNOWN"] } },
           data: {
             providerPaymentId: remote.paymentId,
             providerDetails: details,
@@ -225,18 +273,137 @@ export async function POST(
             status: "PENDING",
           },
         }),
+        prisma.testReservation.updateMany({
+          where: { id: reservation.id, status: { notIn: ["PAID", "REJECTED"] } },
+          data: { status: "AWAITING_PAYMENT" },
+        }),
+      ]);
+      const current = await prisma.testPayment.findUniqueOrThrow({ where: { id: payment.id } });
+      return NextResponse.json({
+        ok: true,
+        provider: selectedProvider,
+        paymentId: remote.paymentId,
+        status: current.status,
+        amount: TEST_AMOUNT,
+        currency: TEST_CURRENCY,
+        ...details,
+      });
+    }
+    if (selectedProvider === "ekwanza-ticket") {
+      const referenceCode = `festgo_test_${reservation.reference.replace(/[^A-Za-z0-9_-]/g, "_")}_${crypto.randomUUID()}`;
+      await prisma.testPayment.update({
+        where: { id: payment.id },
+        data: { providerDetails: { referenceCode } },
+      });
+      const remote = await createEkwanzaTicket({
+        amount: TEST_AMOUNT,
+        referenceCode,
+        mobileNumber: reservation.customerPhone,
+      });
+      storedProviderPaymentId = remote.code;
+      const details = {
+        referenceCode,
+        qrCode: remote.qrCode,
+        expirationDate: remote.expirationDate,
+      };
+      await prisma.$transaction([
+        prisma.testPayment.update({
+          where: { id: payment.id },
+          data: {
+            providerPaymentId: remote.code,
+            providerDetails: details,
+            rawStatus: String(remote.status),
+            status: "PENDING",
+          },
+        }),
         prisma.testReservation.update({
           where: { id: reservation.id },
           data: { status: "AWAITING_PAYMENT" },
         }),
+        prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            action: "EKWANZA_TICKET_TEST_CREATED",
+            entityType: "TestReservation",
+            entityId: reservation.id,
+            metadata: {
+              ticketCode: remote.code,
+              amount: TEST_AMOUNT,
+              referenceCode,
+            },
+            ipAddress: clientIp(request),
+          },
+        }),
       ]);
       return NextResponse.json({
         ok: true,
-        paymentId: remote.paymentId,
+        provider: selectedProvider,
+        paymentId: remote.code,
         status: "PENDING",
         amount: TEST_AMOUNT,
         currency: TEST_CURRENCY,
-        ...details,
+        qrCode: remote.qrCode,
+        expirationDate: remote.expirationDate,
+      });
+    }
+    if (selectedProvider === "ekwanza") {
+      const merchantTransactionId = `TG${Date.now().toString(36).slice(-7).toUpperCase()}${crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`.slice(0, 15);
+      await prisma.testPayment.update({
+        where: { id: payment.id },
+        data: { providerDetails: { merchantTransactionId } },
+      });
+      const remote = await createEkwanzaCharge({
+        amount: TEST_AMOUNT,
+        merchantTransactionId,
+        method: parsed.data.method === "multicaixa" ? "gpo" : "reference",
+        phoneNumber: reservation.customerPhone,
+      });
+      storedProviderPaymentId = remote.id;
+      const details = {
+        merchantTransactionId,
+        paymentUrl: remote.paymentUrl,
+        reference: remote.reference,
+        responseKeys: remote.responseKeys,
+      };
+      await prisma.$transaction([
+        prisma.testPayment.update({
+          where: { id: payment.id },
+          data: {
+            providerPaymentId: remote.id,
+            providerDetails: details,
+            rawStatus: remote.status,
+            status: "PENDING",
+          },
+        }),
+        prisma.testReservation.update({
+          where: { id: reservation.id },
+          data: { status: "AWAITING_PAYMENT" },
+        }),
+        prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            action: "EKWANZA_TEST_PAYMENT_CREATED",
+            entityType: "TestReservation",
+            entityId: reservation.id,
+            metadata: {
+              merchantTransactionId,
+              amount: TEST_AMOUNT,
+              method:
+                parsed.data.method === "multicaixa" ? "gpo" : "reference",
+            },
+            ipAddress: clientIp(request),
+          },
+        }),
+      ]);
+      return NextResponse.json({
+        ok: true,
+        provider: selectedProvider,
+        paymentId: merchantTransactionId,
+        status: "PENDING",
+        amount: TEST_AMOUNT,
+        currency: TEST_CURRENCY,
+        paymentUrl: remote.paymentUrl,
+        reference: remote.reference,
       });
     }
     const remote = await createPayment({
@@ -287,6 +454,7 @@ export async function POST(
     });
     return NextResponse.json({
       ok: true,
+      provider: selectedProvider,
       paymentId: remote.payment_id,
       status: verified.status,
       amount: TEST_AMOUNT,
@@ -296,16 +464,20 @@ export async function POST(
   } catch (error) {
     const providerError = error instanceof PaymentsApiError ? error : null;
     const wipayError = error instanceof WiPayError ? error : null;
+    const ekwanzaError = error instanceof EkwanzaError ? error : null;
     const diagnosticCode =
       providerError?.diagnosticCode ??
       wipayError?.code ??
+      ekwanzaError?.code ??
       (error instanceof DOMException && error.name === "TimeoutError"
         ? "WIPAY_TIMEOUT"
         : "UNEXPECTED_ERROR");
     const diagnosticDetail = wipayError?.detail ?? null;
     const knownFailure =
       (Boolean(providerError?.status) && (providerError?.status ?? 500) < 500) ||
-      (Boolean(wipayError?.status) && (wipayError?.status ?? 500) < 500);
+      (Boolean(wipayError?.status) && (wipayError?.status ?? 500) < 500) ||
+      (Boolean(ekwanzaError?.status) &&
+        (ekwanzaError?.status ?? 500) < 500);
     await prisma.$transaction([
       prisma.testPayment.update({
         where: { id: payment.id },
@@ -333,7 +505,11 @@ export async function POST(
             providerPaymentId: storedProviderPaymentId,
             diagnosticCode,
             diagnosticDetail,
-            providerStatus: providerError?.status ?? wipayError?.status ?? null,
+            providerStatus:
+              providerError?.status ??
+              wipayError?.status ??
+              ekwanzaError?.status ??
+              null,
           },
           ipAddress: clientIp(request),
         },
@@ -342,8 +518,8 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          providerError || wipayError
-            ? `${(providerError ?? wipayError)!.message}${diagnosticDetail ? ` Host: ${diagnosticDetail}` : ""}`
+          providerError || wipayError || ekwanzaError
+            ? `${(providerError ?? wipayError ?? ekwanzaError)!.message}${diagnosticDetail ? ` Host: ${diagnosticDetail}` : ""}`
             : "Não foi possível iniciar o pagamento de teste.",
         diagnosticCode,
         diagnosticDetail,

@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { publicBaseUrl } from "@/lib/config";
+import { createReservationToken } from "@/lib/reservation-access";
 
 type InvitationTokenInput = {
   id: string;
@@ -59,7 +61,24 @@ export function paymentInvitationTtlHours() {
 
 export function paymentInvitationLink(invitation: InvitationTokenInput) {
   const token = createPaymentInvitationToken(invitation);
-  return `https://festgo.mazanga.digital/confirmar/${encodeURIComponent(token)}`;
+  return `${publicBaseUrl()}/confirmar/${encodeURIComponent(token)}`;
+}
+
+export function checkoutRecoveryLink(reservationId: string) {
+  return `${publicBaseUrl()}/checkout/${encodeURIComponent(reservationId)}?token=${encodeURIComponent(createReservationToken(reservationId))}`;
+}
+
+export function canRecoverCheckout(reservation: {
+  status: string;
+  holdExpiresAt: Date | null;
+  event: { status: string; eventDate: Date };
+  payments: { status: string }[];
+}, now = new Date()) {
+  return ["HELD", "AWAITING_PAYMENT", "PAYMENT_PENDING"].includes(reservation.status)
+    && (!reservation.holdExpiresAt || reservation.holdExpiresAt > now)
+    && !["CANCELLED", "CLOSED"].includes(reservation.event.status)
+    && reservation.event.eventDate > now
+    && !reservation.payments.some((payment) => ["SUCCEEDED", "UNKNOWN", "REFUND_PENDING", "REFUNDED"].includes(payment.status));
 }
 
 export function invitationState(invitation: {

@@ -80,14 +80,6 @@ export default async function ReservationPage({
       ? (experienceLog.metadata as Record<string, unknown>)
       : {};
 
-  const approvalContent = smsTemplates.preReservationApproved(reservation.reference);
-  const approvalAnalysis = analyzeSms(approvalContent);
-  const approvalSms = reservation.notifications.find(
-    (notification) => notification.template === "PRE_RESERVATION_APPROVED",
-  );
-  const registrationSms = reservation.notifications.find(
-    (notification) => notification.template === "PRE_RESERVATION_RECEIVED",
-  );
   const paymentLinkSms = reservation.notifications.find(
     (notification) => notification.template === "PAYMENT_LINK",
   );
@@ -169,22 +161,6 @@ export default async function ReservationPage({
                 id={reservation.id}
                 current={reservation.contactStatus}
                 reservationStatus={reservation.status}
-                canResendSms={Boolean(registrationSms && ["FAILED", "RETRY"].includes(registrationSms.status) && registrationSms.attempts < 3)}
-                approvalSms={approvalSms ? {
-                  status: approvalSms.status,
-                  attempts: approvalSms.attempts,
-                  providerMessageId: approvalSms.providerMessageId,
-                  providerStatus: approvalSms.providerStatus,
-                  sentAt: approvalSms.sentAt?.toISOString() ?? null,
-                  lastError: approvalSms.lastError,
-                } : null}
-                approvalPreview={{
-                  content: approvalContent,
-                  characterCount: approvalAnalysis.characterCount,
-                  encoding: approvalAnalysis.encoding,
-                  segments: approvalAnalysis.segments,
-                  isSingleSegment: approvalAnalysis.isSingleSegment && approvalAnalysis.encoding === "GSM-7",
-                }}
               />
               <div className="mt-5">
                 <PaymentInvitationAdminActions

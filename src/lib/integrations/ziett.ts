@@ -1,3 +1,5 @@
+import { smsTemplates } from "@/lib/sms";
+
 const ZIETT_MESSAGES_URL = "https://api.ziett.co/c/v1/messages";
 
 type ZiettMessageResponse = {
@@ -82,16 +84,18 @@ export async function sendOtpSms({
   phone,
   code,
   idempotencyKey,
+  expiresInMinutes = 5,
 }: {
   phone: string;
   code: string;
   idempotencyKey: string;
+  expiresInMinutes?: number;
 }): Promise<{ messageId: string }> {
   if (!/^\d{6}$/.test(code))
     throw new ZiettError("O código OTP deve ter seis dígitos.");
   return sendSms({
     phone,
     idempotencyKey,
-    content: `FestGO: O teu codigo de verificacao e ${code}. Valido por 5 minutos. Nao partilhes este codigo.`,
+    content: smsTemplates.otp(code, expiresInMinutes),
   });
 }

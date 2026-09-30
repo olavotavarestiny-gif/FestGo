@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { createSessionToken, verifyPassword } from "@/lib/auth-crypto";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { isSameOriginRequest } from "@/lib/request-security";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -12,6 +13,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!isSameOriginRequest(request)) return NextResponse.json({ error: "Origem inválida." }, { status: 403 });
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   const emailKey = parsed.success

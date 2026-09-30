@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
+import { trackClarityEvent } from "@/lib/clarity";
 
 const campaignKeys = [
   "source",
@@ -41,7 +42,10 @@ export function CampaignLink({
   }, []);
 
   return (
-    <Link href={href} className={className} onClick={() => track(eventName)}>
+    <Link href={href} className={className} onClick={() => {
+      track(eventName);
+      trackClarityEvent("reserve_clicked");
+    }}>
       {children}
     </Link>
   );

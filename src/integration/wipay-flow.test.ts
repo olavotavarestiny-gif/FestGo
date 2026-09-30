@@ -3,9 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as wipayCallback } from "@/app/api/webhooks/wipay/route";
 import { POST as wipayTestCallback } from "@/app/api/webhooks/wipay-test/route";
-import { POST as managePaymentInvitation } from "@/app/api/admin/payment-invitations/[reservationId]/route";
-import { createSessionToken } from "@/lib/auth-crypto";
-import { resetWiPayTokenCacheForTests } from "@/lib/integrations/wipay";
+import { ensureWiPaySignatureToken, resetWiPayTokenCacheForTests } from "@/lib/integrations/wipay";
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 const prisma = new PrismaClient();
@@ -13,7 +11,6 @@ const signatureToken = "signature-token-with-more-than-thirty-two-characters";
 
 describe.skipIf(!enabled)("WiPay callback flow", () => {
   let eventId = "";
-  let adminCookie = "";
 
   beforeAll(async () => {
     process.env.WIPAY_API_URL = "https://api.wipay.ao";
@@ -25,30 +22,21 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     eventId = (
       await prisma.event.findUniqueOrThrow({ where: { slug: "brunch-mangais" } })
     ).id;
-    const admin = await prisma.user.create({
-      data: {
-        email: `wipay-admin-${randomUUID()}@example.test`,
-        name: "Administrador WiPay",
-        passwordHash: "test",
-        role: "ADMIN",
-      },
-    });
-    adminCookie = `festgo_session=${createSessionToken({
-      userId: admin.id,
-      role: "ADMIN",
-      sessionVersion: admin.sessionVersion,
-      exp: Math.floor(Date.now() / 1000) + 3_600,
-    })}`;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        Response.json({
+      vi.fn()
+        .mockResolvedValueOnce(Response.json({
           access_token: signatureToken,
           expires_in: 86_400,
           scope: "signature",
-        }),
-      ),
+        }))
+        .mockResolvedValue(Response.json({
+          access_token: "different-signature-token-that-must-never-be-used",
+          expires_in: 86_400,
+          scope: "signature",
+        })),
     );
+    await ensureWiPaySignatureToken();
   });
 
   afterAll(async () => {
@@ -113,6 +101,18 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     return { reservation, payment, providerPaymentId, providerReference };
   }
 
+  it("reuses an encrypted signing token and verifies callbacks after token rotation", async () => {
+    const stored = await prisma.gatewayToken.findFirstOrThrow();
+    expect(stored.encryptedValue).not.toContain(signatureToken);
+    const request = vi.mocked(globalThis.fetch);
+    expect(request).toHaveBeenCalledTimes(1);
+    await ensureWiPaySignatureToken();
+    expect(request).toHaveBeenCalledTimes(1);
+    await prisma.gatewayToken.update({ where: { id: stored.id }, data: { expiresAt: new Date(0) } });
+    await ensureWiPaySignatureToken();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   function callbackRequest(payload: Record<string, unknown>, valid = true) {
     const raw = JSON.stringify(payload);
     const signature = valid
@@ -146,33 +146,17 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     };
   }
 
-  it("records a signed callback once and waits for the administrator before occupying the seat", async () => {
+  it("confirms a signed payment and issues one ticket without administrator intervention", async () => {
     const prepared = await preparedPayment({ seat: 11 });
     const payload = payloadFor(prepared);
     const first = await wipayCallback(callbackRequest(payload));
     expect(first.status).toBe(200);
     expect(await prisma.ticket.count({
       where: { passenger: { reservationId: prepared.reservation.id } },
-    })).toBe(0);
+    })).toBe(1);
     expect((await prisma.reservation.findUniqueOrThrow({
       where: { id: prepared.reservation.id },
-    })).status).toBe("PAYMENT_UNCERTAIN");
-
-    const confirmed = await managePaymentInvitation(
-      new Request(
-        `http://localhost/api/admin/payment-invitations/${prepared.reservation.id}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie: adminCookie },
-          body: JSON.stringify({
-            action: "CONFIRM_MANUAL_PAYMENT",
-            transactionReference: prepared.providerPaymentId,
-          }),
-        },
-      ),
-      { params: Promise.resolve({ reservationId: prepared.reservation.id }) },
-    );
-    expect(confirmed.status).toBe(200);
+    })).status).toBe("PAID");
     expect(await prisma.ticket.count({
       where: { passenger: { reservationId: prepared.reservation.id } },
     })).toBe(1);
@@ -217,7 +201,7 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     })).toMatchObject({ status: "SUCCEEDED" });
     expect((await prisma.reservation.findUniqueOrThrow({
       where: { id: prepared.reservation.id },
-    })).status).toBe("PAYMENT_UNCERTAIN");
+    })).status).toBe("PAID");
   });
 
   it("rejects an invalid signature and an incorrect amount", async () => {
@@ -227,6 +211,10 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
       ...payloadFor(prepared),
       amount: "1.00",
     }))).status).toBe(409);
+    expect((await wipayCallback(callbackRequest({
+      ...payloadFor(prepared),
+      status_reason: "3002",
+    }))).status).toBe(400);
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: prepared.payment.id } })).status).toBe("PENDING");
   });
 
@@ -254,7 +242,7 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     })).toBe(0);
   });
 
-  it("confirms an isolated 100 Kz sandbox payment and emits one test ticket", async () => {
+  it("confirms an early sandbox callback by reference and emits one test ticket", async () => {
     const suffix = randomUUID();
     const user = await prisma.user.create({
       data: {
@@ -282,11 +270,10 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
       data: {
         testReservationId: reservation.id,
         provider: "wipay",
-        providerPaymentId,
         idempotencyKey: `test-payment-${suffix}`,
         productId: "wipay-sandbox",
         method: "hosted",
-        status: "PENDING",
+        status: "CREATED",
         amount: 100,
         currency: "AOA",
         providerDetails: { referenceId },
@@ -307,7 +294,12 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     expect(first.status).toBe(200);
     expect((await prisma.testPayment.findUniqueOrThrow({
       where: { id: payment.id },
-    })).status).toBe("SUCCEEDED");
+    }))).toMatchObject({ status: "SUCCEEDED", providerPaymentId });
+    await prisma.testPayment.updateMany({
+      where: { id: payment.id, status: { in: ["CREATED", "PENDING", "UNKNOWN"] } },
+      data: { status: "PENDING", rawStatus: "checkout_created" },
+    });
+    expect((await prisma.testPayment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe("SUCCEEDED");
     expect(await prisma.testTicket.count({
       where: { testReservationId: reservation.id },
     })).toBe(1);

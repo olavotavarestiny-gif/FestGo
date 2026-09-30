@@ -199,16 +199,6 @@ export async function POST(request: Request) {
               comment: "Pré-reserva recebida pelo website.",
             },
           });
-          if (process.env.ZIETT_API_KEY && process.env.ZIETT_SMS_REMITTER_ID) {
-            await tx.notification.create({
-              data: {
-                reservationId: reservation.id,
-                channel: "SMS",
-                recipient: reservation.customer.phone,
-                template: "PRE_RESERVATION_RECEIVED",
-              },
-            });
-          }
           if (process.env.KUKUGEST_ENABLED === "true") {
             await tx.cRMIntegrationJob.upsert({
               where: {

@@ -16,10 +16,10 @@ export function createTicketBundleToken(reference: string, expiresAt: Date) {
 }
 
 export function verifyTicketBundleToken(reference: string, token: string) {
-  const [rawExpiry, suppliedSignature] = token.split(".");
+  const [rawExpiry, suppliedSignature, extra] = token.split(".");
   const expiry = Number(rawExpiry);
   if (
-    !Number.isInteger(expiry) ||
+    extra || !Number.isSafeInteger(expiry) ||
     expiry <= Math.floor(Date.now() / 1000) ||
     !suppliedSignature
   )

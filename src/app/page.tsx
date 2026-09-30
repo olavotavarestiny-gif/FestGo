@@ -8,6 +8,8 @@ import {
 import { CampaignLink, ExperienceAnalytics } from "@/components/experience-actions";
 import { Logo } from "@/components/logo";
 import { event, formatKz } from "@/lib/data";
+import { getPublicEvent } from "@/lib/public-event";
+import { isPreReservationMode } from "@/lib/pre-reservations";
 
 const services: Array<{ name: string; tagline: string; description: string; benefit: string; status: "included" | "preparing"; icon: LucideIcon }> = [
   { name: "FestGo Welcome", tagline: "Um começo especial.", description: "Água, sumo e aperitivos de boas-vindas assim que embarcares.", benefit: "Começa o dia já no ambiente certo.", status: "included", icon: CupSoda },
@@ -20,7 +22,7 @@ const services: Array<{ name: string; tagline: string; description: string; bene
 
 const steps = [
   ["01", "Escolhe a tua zona", "Indica onde preferes embarcar e a zona aproximada de regresso."],
-  ["02", "Faz a pré-reserva", "Regista os passageiros, o plano e os lugares pretendidos."],
+  ["02", "Reserva no website", "Escolhe o embarque, indica os passageiros e confirma o preço antes de pagar."],
   ["03", "Começa a experiência", "Embarca, recebe o Welcome Drink e entra no ambiente FestGo."],
   ["04", "Aproveita o brunch", "Desfruta do evento e dos serviços confirmados para esta edição."],
   ["05", "Regressa com tranquilidade", "No final, tratamos do regresso dentro das zonas previamente confirmadas."],
@@ -36,30 +38,35 @@ const questions = [
   ["O Kids Club estará disponível no evento?", "Ainda não está activo. Só será anunciado após autorização, espaço adequado, equipa e procedimentos de segurança confirmados."],
   ["A FestGo vai buscar-me e deixar-me em casa?", "Podes indicar preferências de embarque e regresso. As zonas e os pontos finais serão organizados e confirmados antes da viagem; não prometemos cobertura de qualquer morada."],
   ["Posso reservar para um grupo?", "Sim. Podes registar vários passageiros e o sistema aplica a combinação disponível mais económica."],
-  ["Como funcionam pré-reserva e pagamento?", "Primeiro registamos o teu interesse sem cobrança. A equipa confirma a operação e envia os próximos passos; o lugar só fica garantido após pagamento validado."],
+  ["Como funciona o pagamento?", "Quando as vendas estiverem abertas, escolhes o embarque e pagas no checkout. Após confirmação segura do pagamento, os bilhetes ficam disponíveis no website."],
   ["Quais são as condições de cancelamento?", "As condições aplicáveis estarão disponíveis antes do pagamento e podem ser consultadas na página de cancelamentos."],
   ["Como contacto a equipa?", "Após a inscrição, a equipa usa o contacto indicado para o acompanhamento operacional da reserva."],
 ];
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+export default async function Home() {
+  const publicEvent = await getPublicEvent();
+  const preMode = isPreReservationMode();
+  const price = publicEvent?.prices.individual ?? event.price;
+  const callToAction = preMode ? "Pré-reservar" : "Reservar";
   return (
     <main className="festgo-home experience-home">
       <ExperienceAnalytics />
       <header className="home-header"><div className="home-shell experience-nav">
         <Link href="#inicio" aria-label="FestGo — início"><Logo /></Link>
         <nav aria-label="Navegação principal"><Link href="#experiencia">Experiência</Link><Link href="#servicos">Serviços</Link><Link href="#rotas">Rotas</Link><Link href="#faq">FAQ</Link></nav>
-        <CampaignLink className="home-cta home-cta-small" eventName="header_pre_reservation_click">Pré-reservar <ArrowRight size={16} /></CampaignLink>
+        <CampaignLink className="home-cta home-cta-small" eventName="header_reservation_click">{callToAction} <ArrowRight size={16} /></CampaignLink>
       </div></header>
 
       <section id="inicio" className="experience-hero"><div className="home-shell experience-hero-grid">
         <div className="experience-hero-copy">
           <p className="experience-label">FestGo Experience · Brunch Mangais · 01 Novembro</p>
           <h1>O brunch começa <em>antes de chegares.</em></h1>
-          <p className="experience-lead">Muito mais do que uma viagem. Conforto, aperitivos, música, entretenimento e regresso organizado para aproveitares o dia do princípio ao fim.</p>
-          <div className="experience-price"><strong>{formatKz(event.price)}</strong><span>/ pessoa</span></div>
+          <p className="experience-lead">Transporte colectivo de ida e volta para aproveitares o Brunch Mangais com tranquilidade. Escolhe o teu embarque e acompanha a tua reserva no site.</p>
+          <div className="experience-price"><strong>{formatKz(price)}</strong><span>/ pessoa</span></div>
           <p className="experience-includes">Ida e volta <i /> Welcome Drink <i /> FestGo Power* <i /> Entretenimento <i /> Regresso organizado</p>
-          <div className="hero-actions"><CampaignLink className="home-cta" eventName="hero_pre_reservation_click">Quero viver esta experiência <ArrowRight size={18} /></CampaignLink><Link href="#servicos" className="text-link">Descobrir o que está incluído <ArrowDownRight size={18} /></Link></div>
-          <p className="hero-note">Pré-reserva sem pagamento. O ingresso do Brunch Mangais não está incluído. Serviços e zonas sujeitos a confirmação operacional.</p>
+          <div className="hero-actions"><CampaignLink className="home-cta" eventName="hero_reservation_click">{callToAction} transporte <ArrowRight size={18} /></CampaignLink><Link href="#servicos" className="text-link">Descobrir o que está incluído <ArrowDownRight size={18} /></Link></div>
+          <p className="hero-note">{preMode ? "Pré-reserva sem pagamento." : publicEvent?.salesOpen ? "Escolhe o embarque, paga online e recebe os bilhetes no site." : "Reservas online disponíveis após confirmação dos horários e abertura das vendas."} O ingresso do Brunch Mangais não está incluído.</p>
         </div>
         <div className="experience-visual" aria-label="Percurso FestGo entre Luanda e o Brunch Mangais">
           <div className="visual-top"><span>Luanda</span><span>01 · 11 · 2026</span><span>Mangais</span></div><BusRouteArtwork />
@@ -100,10 +107,10 @@ export default function Home() {
 
       <section id="reservar" className="conversion-section"><div className="home-shell conversion-card">
         <div><p className="section-kicker">O teu lugar nesta experiência começa aqui</p><h2>A tua próxima grande experiência começa aqui.</h2><p>Junta os teus amigos, prepara o teu melhor outfit e deixa o caminho connosco.</p></div>
-        <div className="conversion-action"><span>Desde</span><strong>{formatKz(event.price)} <small>/ pessoa</small></strong><CampaignLink className="home-cta" eventName="final_pre_reservation_click">Quero pré-reservar <ArrowRight size={18} /></CampaignLink><small>Sem cobrança agora · sujeito a confirmação</small></div>
+        <div className="conversion-action"><span>Desde</span><strong>{formatKz(price)} <small>/ pessoa</small></strong><CampaignLink className="home-cta" eventName="final_reservation_click">{callToAction} <ArrowRight size={18} /></CampaignLink><small>{preMode ? "Sem cobrança agora · sujeito a confirmação" : "Pagamento no checkout · bilhetes após confirmação"}</small></div>
       </div></section>
 
-      <section id="faq" className="experience-faq"><div className="home-shell faq-grid"><div><p className="section-kicker">Perguntas frequentes</p><h2>Antes de embarcares.</h2><p>Informação directa sobre a experiência, os serviços e a pré-reserva.</p></div><div className="faq-list">{questions.map(([question,answer]) => <details key={question}><summary>{question}<ChevronDown size={18} /></summary><p>{answer}</p></details>)}</div></div></section>
+      <section id="faq" className="experience-faq"><div className="home-shell faq-grid"><div><p className="section-kicker">Perguntas frequentes</p><h2>Antes de embarcares.</h2><p>Informação sobre a viagem, a reserva e o pagamento.</p></div><div className="faq-list">{questions.map(([question,answer]) => <details key={question}><summary>{question}<ChevronDown size={18} /></summary><p>{answer}</p></details>)}</div></div></section>
 
       <footer className="home-footer"><div className="home-shell footer-inner"><Link href="#inicio"><Logo /></Link><div className="footer-links"><Link href="/termos">Termos</Link><Link href="/privacidade">Privacidade</Link><Link href="/cancelamentos">Cancelamentos</Link></div><span>© 2026 FestGo Angola</span></div></footer>
     </main>

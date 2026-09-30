@@ -13,6 +13,7 @@ import { Logo } from "@/components/logo";
 import { AdminActions } from "@/components/admin-actions";
 import { AdminBulkCustomerActions } from "@/components/admin-bulk-customer-actions";
 import { EventPreReservationSettings } from "@/components/event-pre-reservation-settings";
+import { RouteOperationsSettings } from "@/components/route-operations-settings";
 import { deletableCustomerWhere } from "@/lib/admin-customer-deletion";
 import {
   filtersQuery,
@@ -25,6 +26,7 @@ import {
 import { formatKz } from "@/lib/data";
 import { prisma } from "@/lib/db";
 import { requireStaff } from "@/lib/auth";
+import { isPreReservationMode, arePaymentsEnabled } from "@/lib/pre-reservations";
 
 export const dynamic = "force-dynamic";
 const pageSize = 50;
@@ -52,12 +54,13 @@ export default async function AdminPage({
   const input = await searchParams;
   const filters = parseAdminReservationFilters(input);
   const page = Math.max(1, Number.parseInt(input.page ?? "1", 10) || 1);
-  const [events, event] = await Promise.all([
+  const [events, event, routes] = await Promise.all([
     prisma.event.findMany({
       select: { slug: true, name: true },
       orderBy: { eventDate: "desc" },
     }),
     prisma.event.findUnique({ where: { slug: filters.event } }),
+    prisma.route.findMany({ where: { event: { slug: filters.event } }, include: { pickupPoints: { orderBy: { sortOrder: "asc" } } }, orderBy: { name: "asc" } }),
   ]);
   const eventId = event?.id ?? "missing";
   const listWhere = reservationWhere(filters);
@@ -171,8 +174,8 @@ export default async function AdminPage({
           <div className="text-right"><b className="block text-sm">{user.name}</b><small className="text-white/35">Administrador</small></div>
         </header>
         <div className="mt-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-          <div><p className="eyebrow">Painel administrativo</p><h1 className="mt-2 text-3xl font-black">{event?.name ?? "Evento"}</h1><p className="mt-1 text-sm text-white/40">Dados operacionais da PostgreSQL · pagamentos desactivados</p></div>
-          <AdminActions eventStatus={event?.status ?? "DRAFT"} preReservationMode exportHref={`/api/admin/passengers.csv${exportQuery ? `?${exportQuery}` : ""}`} />
+          <div><p className="eyebrow">Painel administrativo</p><h1 className="mt-2 text-3xl font-black">{event?.name ?? "Evento"}</h1><p className="mt-1 text-sm text-white/40">Dados operacionais da PostgreSQL · pagamentos {arePaymentsEnabled() ? "configurados" : "desactivados"}</p></div>
+          <AdminActions eventStatus={event?.status ?? "DRAFT"} preReservationMode={isPreReservationMode()} exportHref={`/api/admin/passengers.csv${exportQuery ? `?${exportQuery}` : ""}`} />
         </div>
 
         <section aria-label="Indicadores" className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
@@ -249,6 +252,10 @@ export default async function AdminPage({
             <Panel title="Configuração comercial" className="md:col-span-2 xl:col-span-1"><EventPreReservationSettings duration={event?.estimatedTravelDuration ?? ""} confirmed={event?.travelEstimateConfirmed ?? false} individualPrice={Number(event?.individualPrice ?? 25_000)} duoPrice={Number(event?.duoPrice ?? 47_500)} groupPrice={Number(event?.groupPrice ?? 90_000)} minorAgeLimit={event?.minorAgeLimit ?? 18} /></Panel>
             <Panel title="Notificações"><Stat label="Falhas de SMS" value={String(smsFailures)} danger={smsFailures > 0} /></Panel>
           </aside>
+          <section aria-label="Operação das rotas" className="mt-5 grid gap-4 lg:grid-cols-2">
+            {routes.map((route) => <RouteOperationsSettings key={route.id} route={{ id: route.id, name: route.name, capacity: route.capacity, active: route.active, whatsappGroupUrl: route.whatsappGroupUrl,
+              pickupPoints: route.pickupPoints.map((point) => ({ id: point.id, name: point.name, address: point.address, departureAt: point.departureAt?.toISOString() ?? null, operationalConfirmed: point.operationalConfirmed })) }} />)}
+          </section>
         </div>
       </div>
     </main>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -36,9 +37,9 @@ export function AdminActions({
   }
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <a href="/admin/teste-gateway" className="btn-secondary">
+      <Link href="/admin/teste-gateway" className="btn-secondary">
         Testar gateway · 100 Kz
-      </a>
+      </Link>
       <a href={exportHref} className="btn-secondary">
         Exportar passageiros
       </a>
@@ -59,9 +60,9 @@ export function AdminActions({
           Abrir vendas
         </button>
       ))}
-      {!preReservationMode && <a href="/operacoes/check-in" className="btn-secondary">
+      {!preReservationMode && <Link href="/operacoes/check-in" className="btn-secondary">
         Check-in
-      </a>}
+      </Link>}
       <button onClick={logout} className="text-sm text-white/45">
         Sair
       </button>

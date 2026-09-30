@@ -55,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
   if (!response.ok)
     throw new KukuGestError(
-      data.error ?? "O KukuGest rejeitou o pedido.",
+      "O KukuGest rejeitou o pedido.",
       response.status,
     );
   return data;
@@ -81,6 +81,7 @@ export async function registerKukuGestSale(input: {
 }) {
   const result = await request<KukuGestSaleResponse>("/sales", {
     method: "POST",
+    headers: { "Idempotency-Key": `festgo-sale-${input.reservationId}` },
     body: JSON.stringify({
       externalId: `festgo:${input.reservationId}`,
       title: `${input.eventName} · ${input.reference}`,
@@ -92,7 +93,7 @@ export async function registerKukuGestSale(input: {
         name: input.customer.name,
         phone: input.customer.phone,
         email: input.customer.email || undefined,
-        tags: ["FestGO", "Brunch Mangais"],
+        tags: ["FestGO", input.eventName],
         customFields: {
           festgoReservation: input.reference,
           pickupPoint: input.pickupPoint,
@@ -117,12 +118,13 @@ export async function upsertKukuGestPreReservation(input: {
 }) {
   const result = await request<KukuGestContactResponse>("/contacts", {
     method: "POST",
+    headers: { "Idempotency-Key": `festgo-contact-${input.reference}` },
     body: JSON.stringify({
       name: input.customer.name,
       phone: input.customer.phone,
       email: input.customer.email || undefined,
       company: "Consumidor Final",
-      tags: ["FestGO", "Brunch Mangais", "Pré-reserva"],
+      tags: ["FestGO", input.eventName, "Pré-reserva"],
       customFields: {
         origem: "FestGO",
         evento: input.eventName,

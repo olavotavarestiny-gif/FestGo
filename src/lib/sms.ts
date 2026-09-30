@@ -46,19 +46,23 @@ export function analyzeSms(content: string): SmsAnalysis {
 }
 
 export const smsTemplates = {
-  preReservationReceived(reference: string) {
-    return `FestGo: Inscricao recebida! Vamos contactar-te para confirmar a reserva. Ref: ${reference}`;
-  },
-  preReservationApproved(reference: string) {
-    return `FestGo: Pre-reserva aprovada! Em breve receberas o link de pagamento. Ref: ${reference}`;
+  otp(code: string, expiresInMinutes = 5) {
+    return `FestGo: Codigo de verificacao ${code}. Valido por ${expiresInMinutes} minutos. Nao partilhes este codigo.`;
   },
   paymentLink(link: string) {
     return `FestGo: Paga a tua reserva aqui: ${link}`;
   },
   paymentInvitation(link: string, reference: string) {
-    return `FestGo 💜 A tua pré-reserva está pronta para pagamento! Confirma o teu plano e os teus dados neste link: ${link}. Referência: ${reference}.`;
+    return `FestGo: Reserva ${reference}. Conclui o pagamento no site: ${link}`;
   },
-  paymentConfirmed(link: string) {
-    return `FestGo: Pagamento confirmado! Acede ao teu bilhete: ${link}`;
+  abandonedCheckout(link: string, reference: string) {
+    return `FestGo: A reserva ${reference} aguarda pagamento. Continua enquanto os lugares estao reservados: ${link}`;
+  },
+  paymentConfirmed(link: string, reference?: string) {
+    return `FestGo: Pagamento confirmado${reference ? `! Reserva ${reference}` : ""}. Bilhetes, embarque, horario e grupo da viagem: ${link}`;
+  },
+  eventReminder(link: string, pickup: string, time: string) {
+    const location = pickup.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").slice(0, 60);
+    return `FestGo: Amanha, embarque as ${time} em ${location}. Bilhetes e viagem: ${link}`;
   },
 };

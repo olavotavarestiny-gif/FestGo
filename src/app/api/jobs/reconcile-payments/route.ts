@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { reconcilePayment } from "@/lib/integrations/payments-api";
+import { reconcileProviderPayment } from "@/lib/payment-providers";
 import { arePaymentsEnabled } from "@/lib/pre-reservations";
+import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
 import {
   reconcileTestPayment,
   recoverTestPayment,
@@ -43,38 +44,45 @@ async function run(request: Request) {
       testFailed,
     });
   const now = new Date();
-  const expired = await prisma.reservation.updateMany({
-    where: {
-      status: "HELD",
-      holdExpiresAt: { lt: now },
-      payments: { none: {} },
-    },
-    data: { status: "EXPIRED" },
+  const expiring = await prisma.reservation.findMany({
+    where: { status: { in: ["HELD", "PAYMENT_PENDING", "AWAITING_PAYMENT", "PAYMENT_UNCERTAIN"] }, holdExpiresAt: { lte: now }, payments: { none: { status: { in: ["SUCCEEDED", "REFUND_PENDING"] } } } },
+    take: 100, select: { id: true, eventId: true },
   });
+  let expiredHolds = 0;
+  for (const reservation of expiring) {
+    expiredHolds += await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${reservation.eventId} FOR UPDATE`;
+      const updated = await tx.reservation.updateMany({
+        where: { id: reservation.id, status: { in: ["HELD", "PAYMENT_PENDING", "AWAITING_PAYMENT", "PAYMENT_UNCERTAIN"] }, holdExpiresAt: { lte: now }, payments: { none: { status: { in: ["SUCCEEDED", "REFUND_PENDING"] } } } },
+        data: { status: "EXPIRED" },
+      });
+      if (updated.count) await tx.seatPreference.updateMany({ where: { reservationId: reservation.id, releasedAt: null }, data: { status: "RELEASED", releasedAt: now } });
+      return updated.count;
+    });
+  }
   const payments = await prisma.payment.findMany({
     where: {
-      provider: "paygo",
+      provider: { in: ["paygo", "ekwanza"] },
       providerPaymentId: { not: null },
-      status: { in: ["CREATED", "PENDING", "UNKNOWN"] },
-      reservation: {
-        status: { in: ["AWAITING_PAYMENT", "PAYMENT_UNCERTAIN"] },
-      },
+      status: { in: ["CREATED", "PENDING", "UNKNOWN", "SUCCEEDED", "REFUND_PENDING"] },
+      reservation: { status: { notIn: ["PAID", "REFUNDED"] } },
     },
     orderBy: { updatedAt: "asc" },
     take: 50,
-    select: { id: true },
+    include: { reservation: { select: { reference: true } } },
   });
   let reconciled = 0;
   let failed = 0;
   for (const payment of payments) {
     try {
-      await reconcilePayment(payment.id);
+      const result = await reconcileProviderPayment(payment, payment.reservation.reference);
+      if (result.newlyConfirmed) schedulePostPaymentJobs(request);
       reconciled += 1;
     } catch {
       failed += 1;
     }
   }
-  return NextResponse.json({ expiredHolds: expired.count, reconciled, failed });
+  return NextResponse.json({ expiredHolds, reconciled, failed });
 }
 
 export const GET = run;

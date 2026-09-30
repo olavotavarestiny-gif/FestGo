@@ -43,7 +43,6 @@ export function PaymentInvitationAdminActions({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [customMessage, setCustomMessage] = useState(preview?.content ?? "");
-  const [transactionReference, setTransactionReference] = useState(paymentReference ?? "");
 
   useEffect(() => {
     if (preview?.content && !customMessage) setCustomMessage(preview.content);
@@ -74,7 +73,7 @@ export function PaymentInvitationAdminActions({
     }
   }
 
-  if (!["PAYMENT_PENDING", "PAYMENT_UNCERTAIN"].includes(reservationStatus))
+  if (!["PAYMENT_PENDING", "HELD", "AWAITING_PAYMENT"].includes(reservationStatus))
     return null;
   const canUse = invitation && ["ACTIVE", "CONFIRMED"].includes(invitation.state);
   const sent = sms?.status === "SENT";
@@ -93,7 +92,7 @@ export function PaymentInvitationAdminActions({
         O link abre primeiro a página FestGo. Nenhuma cobrança é criada nesta fase.
       </p>
 
-      {!canUse && reservationStatus === "PAYMENT_PENDING" && (
+      {!canUse && (
         <button
           className="admin-approve mt-3"
           disabled={busy}
@@ -132,7 +131,7 @@ export function PaymentInvitationAdminActions({
                 />
               </label>
               <p className="mt-2 text-[10px] leading-4 text-white/40">
-                Podes escrever a mensagem e colar o link directo do gateway. O texto deve incluir um link HTTPS.
+                A mensagem deve conter o link FestGo gerado para esta reserva.
               </p>
               <div className="sms-meta">
                 <span>{customAnalysis.characterCount} caracteres</span>
@@ -188,39 +187,7 @@ export function PaymentInvitationAdminActions({
           </button>
         </>
       )}
-      {invitation && (
-        <div className="mt-5 border-t border-white/10 pt-5">
-          <h3>Confirmar pagamento recebido</h3>
-          <p>Usa esta acção apenas depois de confirmares o movimento no portal ou na conta. Só então os lugares ficam ocupados e os bilhetes são emitidos.</p>
-          {paymentReference && (
-            <p className="mt-2 break-all text-[10px] text-emerald-300">
-              O gateway registou o pagamento: {paymentReference}
-            </p>
-          )}
-          <label className="gateway-test-field mt-3">
-            Referência da transacção
-            <input
-              maxLength={160}
-              value={transactionReference}
-              onChange={(event) => setTransactionReference(event.target.value)}
-              placeholder="ID ou referência confirmada no gateway"
-            />
-          </label>
-          <button
-            className="admin-approve mt-3"
-            disabled={busy || transactionReference.trim().length < 4}
-            onClick={() => {
-              if (window.confirm("Confirmas que verificaste este pagamento? Esta acção ocupa os lugares e emite os bilhetes."))
-                void action(
-                  { action: "CONFIRM_MANUAL_PAYMENT", transactionReference },
-                  "Pagamento confirmado, lugares ocupados e bilhetes emitidos.",
-                );
-            }}
-          >
-            Confirmar pagamento e ocupar lugares
-          </button>
-        </div>
-      )}
+      {paymentReference && <p className="mt-4 text-xs">Referência associada: {paymentReference}. O pagamento é confirmado pelo fornecedor.</p>}
       {message && <p role="status" className="mt-3 text-sm text-violet-200">{message}</p>}
     </section>
   );

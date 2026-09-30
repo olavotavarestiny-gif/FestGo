@@ -7,16 +7,7 @@ const returnAt = new Date("2026-11-01T19:00:00.000Z"); // 20:00 em Luanda
 try {
   const event = await prisma.event.upsert({
     where: { slug: "brunch-mangais" },
-    update: {
-      name: "FestGO — Brunch Mangais",
-      venue: "Mangais Golf Resort",
-      eventDate,
-      returnAt,
-      basePrice: 25000,
-      currency: "AOA",
-      capacity: 45,
-      ticketIncludesEntry: false,
-    },
+    update: {}, // Preserve operator configuration when the seed is re-run.
     create: {
       slug: "brunch-mangais",
       name: "FestGO — Brunch Mangais",
@@ -41,11 +32,6 @@ try {
         name: "Preferências Luanda",
         capacity: 45,
       },
-    });
-  } else {
-    route = await prisma.route.update({
-      where: { id: route.id },
-      data: { capacity: 45 },
     });
   }
 

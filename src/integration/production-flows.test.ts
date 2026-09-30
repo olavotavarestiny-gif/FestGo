@@ -41,6 +41,8 @@ describe.skipIf(!enabled)("production database flows", () => {
       where: { id: event.id },
       data: { status: "ON_SALE" },
     });
+    const route = await prisma.route.findFirstOrThrow({ where: { eventId: event.id } });
+    await prisma.pickupPoint.updateMany({ where: { routeId: route.id }, data: { operationalConfirmed: true, departureAt: new Date(Date.now() + 24 * 60 * 60_000) } });
     await prisma.sMSVerification.createMany({
       data: phones.map((phone) => ({
         phone,
@@ -101,29 +103,30 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect(reserved._sum.quantity).toBeLessThanOrEqual(event.capacity);
     expect(accepted).toHaveLength(7);
 
-    const first = (await accepted[0].json()) as { reservationId: string };
-    const firstChallenge = challenges[0];
+    const firstIndex = responses.findIndex((response) => response.status === 201);
+    const first = (await responses[firstIndex].json()) as { reservationId: string };
+    const firstChallenge = challenges[firstIndex];
     const repeated = await createReservation(
       new Request("http://localhost/api/reservations", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-forwarded-for": "10.0.0.1",
+          "x-forwarded-for": `10.0.0.${firstIndex + 1}`,
         },
         body: JSON.stringify({
-          name: "Comprador 0",
+          name: `Comprador ${firstIndex}`,
           phone: firstChallenge.phone,
-          email: "buyer0@example.test",
+          email: `buyer${firstIndex}@example.test`,
           pickup: "Cidade — Primeiro de Maio",
           passengers: Array.from(
             { length: 6 },
-            (_, passenger) => `Passageiro 0-${passenger}`,
+            (_, passenger) => `Passageiro ${firstIndex}-${passenger}`,
           ),
           referral: "",
           terms: true,
           marketing: false,
           verificationId: firstChallenge.id,
-          idempotencyKey: keys[0],
+          idempotencyKey: keys[firstIndex],
         }),
       }),
     );
@@ -336,7 +339,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     }
   });
 
-  it("requires a custom pickup location and keeps unpaid seat choices as preferences", async () => {
+  it("requires a custom pickup location and prevents overlapping seat preferences", async () => {
     const invalid = await createPreReservationLead(
       new Request("http://localhost/api/pre-reservations/lead", {
         method: "POST",
@@ -389,7 +392,7 @@ describe.skipIf(!enabled)("production database flows", () => {
         }),
       ),
     ));
-    expect(attempts.map((response) => response.status).sort()).toEqual([201, 201]);
+    expect(attempts.map((response) => response.status).sort()).toEqual([201, 409]);
 
     const payment = await createPaymentIntent(
       new Request("http://localhost/api/payments/intent", {
@@ -530,7 +533,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     });
     expect(approved.status).toBe("PAYMENT_PENDING");
     expect(approved.contactStatus).toBe("AWAITING_PAYMENT");
-    expect(approved.operationalConfirmed).toBe(true);
+    expect(approved.operationalConfirmed).toBe(false);
     expect(
       approved.seatPreferences.every(
         (seat) => seat.status === "PREFERRED",
@@ -566,24 +569,9 @@ describe.skipIf(!enabled)("production database flows", () => {
       ),
       { params: Promise.resolve({ id: reservation.id }) },
     );
-    expect((await sendApproval()).status).toBe(200);
-    const notification = await prisma.notification.findUniqueOrThrow({
-      where: {
-        reservationId_channel_template: {
-          reservationId: reservation.id,
-          channel: "SMS",
-          template: "PRE_RESERVATION_APPROVED",
-        },
-      },
-    });
-    expect(notification.status).toBe("SENT");
-    expect(notification.content).toContain(reservation.reference);
-    expect(notification.encoding).toBe("GSM-7");
-    expect(notification.segmentCount).toBe(1);
-    expect(notification.requestedById).toBe(admin.id);
-    expect(notification.providerMessageId).toBe("approval-message-1");
     expect((await sendApproval()).status).toBe(409);
-    expect(ziettRequest).toHaveBeenCalledOnce();
+    expect(ziettRequest).not.toHaveBeenCalled();
+    expect(await prisma.notification.count({ where: { reservationId: reservation.id, template: "PRE_RESERVATION_APPROVED" } })).toBe(0);
 
     const invitationRequest = (body: Record<string, unknown>, withCookie = true) =>
       managePaymentInvitation(
@@ -605,7 +593,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     expect(generatedResponse.status).toBe(200);
     const generated = await generatedResponse.json();
     expect(generated.state).toBe("ACTIVE");
-    expect(generated.link).toMatch(/^https:\/\/festgo\.mazanga\.digital\/confirmar\//);
+    expect(generated.link).toMatch(/^http:\/\/localhost:3000\/confirmar\//);
     const repeatedGeneration = await invitationRequest({ action: "GENERATE" });
     expect((await repeatedGeneration.json()).link).toBe(generated.link);
     expect(await prisma.paymentInvitation.count({
@@ -676,10 +664,11 @@ describe.skipIf(!enabled)("production database flows", () => {
         { status: 202, headers: { "content-type": "application/json" } },
       ),
     );
-    const customPaymentMessage = `FestGo: Paga aqui https://pay.example/checkout/${reservation.reference}`;
+    const customPaymentMessage = `FestGo: Paga aqui ${generated.link}`;
     expect((await invitationRequest({
       action: "SEND_SMS",
       content: customPaymentMessage,
+      acknowledgeMultipleSegments: true,
     })).status).toBe(200);
     expect((await invitationRequest({
       action: "SEND_SMS",
@@ -696,7 +685,7 @@ describe.skipIf(!enabled)("production database flows", () => {
     });
     expect(paymentSms.status).toBe("SENT");
     expect(paymentSms.content).toBe(customPaymentMessage);
-    expect(paymentSms.segmentCount).toBe(1);
+    expect(paymentSms.segmentCount).toBeGreaterThan(1);
     expect(paymentSms.providerMessageId).toBe("payment-link-message-1");
 
     expect((await invitationRequest({ action: "REVOKE" })).status).toBe(200);
@@ -736,93 +725,23 @@ describe.skipIf(!enabled)("production database flows", () => {
       { params: Promise.resolve({ id: retryReservation.id }) },
     );
     expect(approveRetryReservation.status).toBe(200);
-    ziettRequest
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ trace_id: "trace-failure" }), {
-          status: 503,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ message_id: "approval-message-2", status: "QUEUED" }),
-          { status: 202, headers: { "content-type": "application/json" } },
-        ),
-      );
-    const sendRetryApproval = () => updatePreReservation(
-      new Request(
-        `http://localhost/api/admin/pre-reservations/${retryReservation.id}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json", cookie },
-          body: JSON.stringify({ action: "SEND_APPROVAL_SMS" }),
-        },
-      ),
-      { params: Promise.resolve({ id: retryReservation.id }) },
-    );
-    expect((await sendRetryApproval()).status).toBe(502);
-    let retriedNotification = await prisma.notification.findUniqueOrThrow({
-      where: {
-        reservationId_channel_template: {
-          reservationId: retryReservation.id,
-          channel: "SMS",
-          template: "PRE_RESERVATION_APPROVED",
-        },
-      },
-    });
-    expect(retriedNotification.status).toBe("FAILED");
-    expect(retriedNotification.attempts).toBe(1);
-    expect(retriedNotification.providerStatus).toBe("HTTP_503");
-    expect((await sendRetryApproval()).status).toBe(200);
-    retriedNotification = await prisma.notification.findUniqueOrThrow({
-      where: { id: retriedNotification.id },
-    });
-    expect(retriedNotification.status).toBe("SENT");
-    expect(retriedNotification.attempts).toBe(2);
-    expect(retriedNotification.providerMessageId).toBe("approval-message-2");
-    expect(ziettRequest).toHaveBeenCalledTimes(4);
-
     const generatedRetry = await managePaymentInvitation(
-      new Request(
-        `http://localhost/api/admin/payment-invitations/${retryReservation.id}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie },
-          body: JSON.stringify({ action: "GENERATE" }),
-        },
-      ),
-      { params: Promise.resolve({ reservationId: retryReservation.id }) },
+      new Request(`http://localhost/api/admin/payment-invitations/${retryReservation.id}`, {
+        method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ action: "GENERATE" }),
+      }), { params: Promise.resolve({ reservationId: retryReservation.id }) },
     );
     expect(generatedRetry.status).toBe(200);
-    const manualReference = `MANUAL-${randomUUID()}`;
     const manualConfirmation = await managePaymentInvitation(
-      new Request(
-        `http://localhost/api/admin/payment-invitations/${retryReservation.id}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie },
-          body: JSON.stringify({
-            action: "CONFIRM_MANUAL_PAYMENT",
-            transactionReference: manualReference,
-          }),
-        },
-      ),
-      { params: Promise.resolve({ reservationId: retryReservation.id }) },
+      new Request(`http://localhost/api/admin/payment-invitations/${retryReservation.id}`, {
+        method: "POST", headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ action: "CONFIRM_MANUAL_PAYMENT", transactionReference: `MANUAL-${randomUUID()}` }),
+      }), { params: Promise.resolve({ reservationId: retryReservation.id }) },
     );
-    expect(manualConfirmation.status).toBe(200);
-    const manuallyPaid = await prisma.reservation.findUniqueOrThrow({
-      where: { id: retryReservation.id },
-      include: { payments: true, passengers: { include: { ticket: true } }, seatPreferences: true },
-    });
-    expect(manuallyPaid.status).toBe("PAID");
-    expect(manuallyPaid.payments).toHaveLength(1);
-    expect(manuallyPaid.payments[0]).toMatchObject({
-      provider: "manual-admin",
-      providerReference: manualReference,
-      status: "SUCCEEDED",
-    });
-    expect(manuallyPaid.seatPreferences.every((seat) => seat.status === "CONFIRMED")).toBe(true);
-    expect(manuallyPaid.passengers.every((passenger) => Boolean(passenger.ticket))).toBe(true);
+    expect(manualConfirmation.status).toBe(409);
+    const unpaid = await prisma.reservation.findUniqueOrThrow({ where: { id: retryReservation.id }, include: { payments: true, passengers: { include: { ticket: true } } } });
+    expect(unpaid.status).toBe("PAYMENT_PENDING");
+    expect(unpaid.payments).toHaveLength(0);
+    expect(unpaid.passengers.every((passenger) => !passenger.ticket)).toBe(true);
     vi.unstubAllGlobals();
     delete process.env.ZIETT_API_KEY;
     delete process.env.ZIETT_SMS_REMITTER_ID;

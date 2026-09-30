@@ -6,10 +6,91 @@ import {
   paymentMethodMatches,
   PaymentsApiError,
 } from "@/lib/integrations/payments-api";
+import {
+  EkwanzaError,
+  getEkwanzaCharge,
+  getEkwanzaTicket,
+  mapEkwanzaChargeStatus,
+  mapEkwanzaStatus,
+} from "@/lib/integrations/ekwanza";
 
 export const TEST_PRODUCT_ID = "20d032f3-e0c2-48d3-8ce1-c93bc682dd37";
 export const TEST_AMOUNT = 100;
 export const TEST_CURRENCY = "AOA";
+
+export async function reconcileEkwanzaTestPayment(testPaymentId: string) {
+  const local = await prisma.testPayment.findUnique({
+    where: { id: testPaymentId },
+    include: { testReservation: true },
+  });
+  if (
+    !local?.providerPaymentId ||
+    !["ekwanza", "ekwanza-ticket"].includes(local.provider)
+  )
+    throw new EkwanzaError("Pagamento de teste É-Kwanza não encontrado.", 404);
+  let amount: number;
+  let rawStatus: string;
+  let status: "SUCCEEDED" | "PENDING" | "FAILED" | "CANCELLED" | "UNKNOWN";
+  if (local.provider === "ekwanza-ticket") {
+    const remote = await getEkwanzaTicket(local.providerPaymentId);
+    if (remote.code !== local.providerPaymentId)
+      throw new EkwanzaError("O código É-Kwanza não corresponde ao teste.", 409, "PAYMENT_MISMATCH");
+    amount = remote.amount;
+    rawStatus = String(remote.status);
+    status = mapEkwanzaStatus(remote.status);
+  } else {
+    const remote = await getEkwanzaCharge(local.providerPaymentId);
+    const details = jsonObject(local.providerDetails);
+    if (remote.merchantTransactionId !== details.merchantTransactionId)
+      throw new EkwanzaError("A charge É-Kwanza não corresponde ao teste.", 409, "PAYMENT_MISMATCH");
+    amount = remote.amount;
+    rawStatus = remote.status;
+    status = mapEkwanzaChargeStatus(remote.status, remote.statusCode);
+  }
+  if (amount !== Number(local.amount) || local.currency !== TEST_CURRENCY)
+    throw new EkwanzaError("O pagamento É-Kwanza não corresponde ao valor de teste.", 409, "PAYMENT_MISMATCH");
+  const ticket = await prisma.$transaction(async (tx) => {
+    await tx.testPayment.update({
+      where: { id: local.id },
+      data: {
+        status,
+        rawStatus,
+        reconciledAt: new Date(),
+      },
+    });
+    if (status === "SUCCEEDED") {
+      await tx.testReservation.update({
+        where: { id: local.testReservationId },
+        data: { status: "PAID" },
+      });
+      return tx.testTicket.upsert({
+        where: { testReservationId: local.testReservationId },
+        create: { testReservationId: local.testReservationId },
+        update: {},
+      });
+    }
+    if (status === "FAILED" || status === "CANCELLED")
+      await tx.testReservation.update({
+        where: { id: local.testReservationId },
+        data: { status },
+      });
+    else
+      await tx.testReservation.update({
+        where: { id: local.testReservationId },
+        data: { status: "AWAITING_PAYMENT" },
+      });
+    return null;
+  });
+  return {
+    status,
+    rawStatus,
+    reference: local.testReservation.reference,
+    amount,
+    currency: local.currency,
+    providerPaymentId: local.providerPaymentId,
+    ticketToken: ticket?.publicToken ?? null,
+  };
+}
 
 function phoneDigits(value: string | undefined) {
   return value?.replace(/\D/g, "") ?? "";

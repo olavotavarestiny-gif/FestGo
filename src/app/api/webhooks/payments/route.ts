@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { reconcilePayment } from "@/lib/integrations/payments-api";
+import {
+  reconcileEkwanzaPayment,
+  reconcilePayment,
+} from "@/lib/integrations/payments-api";
 import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
@@ -33,6 +36,7 @@ function providerPaymentId(payload: unknown): string | null {
     root.paymentId ??
     data.payment_id ??
     data.paymentId ??
+    root.id ??
     payment.id ??
     data.id;
   return typeof candidate === "string" && /^[0-9a-f-]{36}$/i.test(candidate)
@@ -60,6 +64,7 @@ export async function POST(request: Request) {
   }
   const webhookSecret =
     process.env.PAYMENTS_WEBHOOK_SECRET ?? process.env.Webhook_secret;
+  if (!webhookSecret) return NextResponse.json({ error: "Segredo do webhook não configurado." }, { status: 503 });
   let signatureValid = false;
   if (webhookSecret) {
     const direct =
@@ -109,7 +114,7 @@ export async function POST(request: Request) {
         { error: "Segredo do webhook não configurado." },
         { status: 503 },
       );
-    const providerEventId = createHash("sha256").update(rawBody).digest("hex");
+    const providerEventId = `paygo:${createHash("sha256").update(rawBody).digest("hex")}`;
     try {
       const existing = await prisma.testPaymentWebhookEvent.findUnique({
         where: { providerEventId },
@@ -159,35 +164,18 @@ export async function POST(request: Request) {
     const payment = await prisma.payment.findUnique({
       where: { providerPaymentId: remoteId },
     });
-    if (!payment || payment.provider !== "paygo")
+    if (!payment || !["paygo", "ekwanza"].includes(payment.provider))
       return NextResponse.json(
         { error: "Pagamento desconhecido." },
         { status: 404 },
       );
-    const providerEventId = createHash("sha256").update(rawBody).digest("hex");
-    const existing = await prisma.paymentWebhookEvent.findUnique({
-      where: { providerEventId },
-    });
-    if (existing?.processedAt)
-      return NextResponse.json({ received: true, duplicate: true });
-    const event =
-      existing ??
-      (await prisma.paymentWebhookEvent.create({
-        data: {
-          paymentId: payment.id,
-          providerEventId,
-          type: "payment.status",
-          payload: payload as Prisma.InputJsonValue,
-          signatureValid,
-        },
-      }));
-    const result = await reconcilePayment(payment.id);
-    await prisma.paymentWebhookEvent.update({
-      where: { id: event.id },
-      data: { processedAt: new Date() },
-    });
-    if (result.status === "SUCCEEDED") schedulePostPaymentJobs(request);
-    return NextResponse.json({ received: true, status: result.status });
+    const providerEventId = `${payment.provider}:${createHash("sha256").update(rawBody).digest("hex")}`;
+    const webhook = { providerEventId, type: "payment.status", payload: payload as Prisma.InputJsonValue };
+    const result = payment.provider === "ekwanza"
+      ? await reconcileEkwanzaPayment(payment.id, webhook)
+      : await reconcilePayment(payment.id, webhook);
+    if (result.newlyConfirmed) schedulePostPaymentJobs(request);
+    return NextResponse.json({ received: true, status: result.status, duplicate: result.duplicate });
   } catch {
     // A resposta não é confirmada para que o fornecedor possa repetir a entrega.
     return NextResponse.json(

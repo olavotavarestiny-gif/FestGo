@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { ZiettError, sendOtpSms } from "@/lib/integrations/ziett";
 import { prisma } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { maxOtpAttempts, otpExpirationMinutes } from "@/lib/config";
 
 export const runtime = "nodejs";
 
@@ -85,7 +86,8 @@ export async function POST(request: Request) {
       data: {
         phone,
         codeHash: "pending",
-        expiresAt: new Date(now.getTime() + 5 * 60_000),
+        expiresAt: new Date(now.getTime() + otpExpirationMinutes() * 60_000),
+        maxAttempts: maxOtpAttempts(),
         lastSentAt: now,
       },
     });
