@@ -21,6 +21,8 @@ Para investigar um pagamento pendente, consultar a referência e os eventos do c
 
 Em 30/09/2026, os primeiros testes no domínio público receberam HTTP 401. O domínio apontava para um redeploy do commit antigo `e475581`, cujo webhook solicitava um token `signature` novo durante a verificação. Após publicar a correção, foi preciso renovar uma vez o token guardado, que tinha ficado desalinhado com o último token emitido pela WiPay durante os testes antigos. O teste sandbox `PROBE-ROTATED-B16C8773` com Multicaixa Express e `900000000` concluiu o fluxo: callback HTTP 200, estado `accepted`, reserva `PAID` e bilhete emitido. O webhook verifica apenas com o token guardado, sem solicitar outro ao receber o callback. Não desactivar a verificação de HMAC para abrir vendas.
 
+Em 06/10/2026, com credenciais de produção e autorização do proprietário, uma transacção real de 100 AOA (`PROBE-LIVE-F1CBFC9E`) concluiu o mesmo fluxo isolado: callback HTTP 200 em `/api/webhooks/wipay-test`, pagamento `SUCCEEDED`/`accepted`, reserva `PAID` e bilhete emitido. A rota temporária que iniciou o checkout foi removida depois da verificação. O teste não abriu as vendas ao público; antes disso, confirmar a URL `/api/webhooks/wipay` no portal WiPay e as condições operacionais do evento.
+
 ## Configuração do projecto
 
 ```dotenv
