@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { prisma } from "@/lib/db";
 import { Logo } from "@/components/logo";
 import { publicBaseUrl } from "@/lib/config";
+import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function TicketPage({
     },
   );
   const reservation = ticket.passenger.reservation;
+  const privateProbe = isPrivateWiPayProbe(reservation);
   const valid = ticket.status === "VALID" && reservation.status === "PAID";
   const usedOutbound = ticket.validations.some(
     (item) => item.leg === "OUTBOUND",
@@ -48,9 +50,9 @@ export default async function TicketPage({
         <header className="bg-zinc-950 px-7 py-6 text-white">
           <Logo />
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.24em] text-purple-300">
-            Bilhete digital
+            {privateProbe ? "Bilhete técnico de teste" : "Bilhete digital"}
           </p>
-          <h1 className="mt-2 text-2xl font-black">Brunch Mangais</h1>
+          <h1 className="mt-2 text-2xl font-black">{reservation.event.name}</h1>
         </header>
         <div className="space-y-6 p-7">
           <div>
@@ -66,12 +68,12 @@ export default async function TicketPage({
           </div>
           {/* QR codes are generated as data URIs and already have an exact bitmap size. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          {privateProbe ? <p className="rounded-xl bg-amber-100 p-4 text-center text-sm font-black text-amber-900">TESTE PRIVADO — não é válido para embarque.</p> : <img
             src={qr}
             alt="Código QR do bilhete"
             className="mx-auto aspect-square w-full max-w-72"
-          />
-          <dl className="grid grid-cols-2 gap-4 border-t border-zinc-100 pt-5 text-sm">
+          />}
+          {!privateProbe && <dl className="grid grid-cols-2 gap-4 border-t border-zinc-100 pt-5 text-sm">
             <div>
               <dt className="text-zinc-500">Data</dt>
               <dd className="font-bold">
@@ -110,11 +112,11 @@ export default async function TicketPage({
                 }) ?? "A confirmar"}
               </dd>
             </div>
-          </dl>
+          </dl>}
           <div
             className={`rounded-2xl px-4 py-3 text-center text-sm font-bold ${valid ? "bg-purple-50 text-purple-800" : "bg-red-50 text-red-700"}`}
           >
-            {valid
+            {privateProbe ? "Pagamento de teste confirmado · bilhete técnico emitido" : valid
               ? `Válido · Ida ${usedOutbound ? "usada" : "disponível"} · Volta ${usedReturn ? "usada" : "disponível"}`
               : "Bilhete inválido ou revogado"}
           </div>

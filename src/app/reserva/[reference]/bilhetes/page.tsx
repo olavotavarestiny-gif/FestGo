@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { prisma } from "@/lib/db";
 import { verifyTicketBundleToken } from "@/lib/ticket-access";
+import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
 
 export const dynamic = "force-dynamic";
 export default async function TicketsPage({
@@ -15,7 +16,7 @@ export default async function TicketsPage({
   const { reference } = await params;
   const { token = "" } = await searchParams;
   if (
-    !/^FG-\d{4}-[A-F0-9]{8}$/.test(reference) ||
+    !/^FG-(?:\d{4}-[A-F0-9]{8}|TEST-[A-F0-9]{10})$/.test(reference) ||
     !verifyTicketBundleToken(reference, token)
   )
     notFound();
@@ -32,12 +33,14 @@ export default async function TicketsPage({
     },
   });
   if (!reservation || reservation.status !== "PAID") notFound();
+  const privateProbe = isPrivateWiPayProbe(reservation);
   return (
     <main className="min-h-screen bg-[#100e17] px-5 py-10 text-white">
       <div className="mx-auto max-w-2xl">
         <Logo />
         <p className="eyebrow mt-10">Reserva {reservation.reference}</p>
-        <h1 className="mt-3 text-4xl font-black">Os teus bilhetes</h1>
+        <h1 className="mt-3 text-4xl font-black">{privateProbe ? "Bilhete técnico emitido" : "Os teus bilhetes"}</h1>
+        {privateProbe && <p className="mt-3 rounded-xl bg-amber-300 p-4 text-sm font-bold text-zinc-950">TESTE PRIVADO — sem viagem e sem direito a embarque no Brunch Mangais.</p>}
         <p className="mt-3 text-white/50">
           {reservation.pickupPoint?.name ?? "Por confirmar"} ·{" "}
           {reservation.pickupPoint?.departureAt?.toLocaleTimeString("pt-AO", {
@@ -50,7 +53,7 @@ export default async function TicketsPage({
           {reservation.passengers.map((passenger) => (
             <article className="card p-5" key={passenger.id}>
               <p className="text-lg font-black">{passenger.fullName}</p>
-              <p className="mt-1 text-xs text-white/40">Bilhete individual</p>
+              <p className="mt-1 text-xs text-white/40">{privateProbe ? "Comprovativo do teste de pagamento" : "Bilhete individual"}</p>
               {passenger.ticket ? (
                 <Link
                   className="btn-primary mt-5 w-full"

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { staffFromRequest } from "@/lib/auth";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
+import { isPrivateWiPayProbe, PRIVATE_WIPAY_PROBE_SLUG } from "@/lib/private-wipay-probe";
 
 export const runtime = "nodejs";
 const inputSchema = z.object({
@@ -46,7 +47,7 @@ export async function GET(
     event: reservation.event.name,
     eventDate: reservation.event.eventDate,
     pickupPoint: reservation.pickupPoint?.name ?? "Por confirmar",
-    status: ticket.status,
+    status: isPrivateWiPayProbe(reservation) ? "TESTE_NAO_VALIDO_PARA_EMBARQUE" : ticket.status,
     reservationStatus: reservation.status,
     used: ticket.validations.map((item) => item.leg),
   });
@@ -68,6 +69,8 @@ export async function POST(
       { error: "Bilhete inexistente." },
       { status: 404 },
     );
+  if (isPrivateWiPayProbe(ticket.passenger.reservation))
+    return NextResponse.json({ error: "Bilhete técnico de teste não válido para embarque." }, { status: 409 });
   if (
     ticket.status !== "VALID" ||
     ticket.passenger.reservation.status !== "PAID"
@@ -81,7 +84,7 @@ export async function POST(
       // Same lock order as payment/refund finalization: a revoked ticket cannot race check-in.
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${ticket.passenger.reservation.eventId} FOR UPDATE`;
       const current = await tx.ticket.findUniqueOrThrow({ where: { id: ticket.id }, include: { passenger: { include: { reservation: { include: { event: true } } } } } });
-      if (current.status !== "VALID" || current.revokedAt || current.passenger.reservation.status !== "PAID" || current.passenger.reservation.event.status === "CANCELLED")
+      if (current.status !== "VALID" || current.revokedAt || current.passenger.reservation.status !== "PAID" || current.passenger.reservation.event.status === "CANCELLED" || current.passenger.reservation.event.slug === PRIVATE_WIPAY_PROBE_SLUG)
         throw new Error("TICKET_REVOKED");
       const created = await tx.ticketValidation.create({
         data: {
