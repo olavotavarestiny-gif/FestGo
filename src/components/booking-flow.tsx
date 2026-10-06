@@ -442,6 +442,7 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
   const [seatStatus, setSeatStatus] = useState<SeatStatus[]>([]);
   const [seatLoading, setSeatLoading] = useState(false);
   const [seatReady, setSeatReady] = useState(false);
+  const [seatOpen, setSeatOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -451,12 +452,15 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
   const [challengeId, setChallengeId] = useState("");
   const [verificationId, setVerificationId] = useState("");
   const [code, setCode] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [formAttempted, setFormAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [resume, setResume] = useState<CheckoutAccess | null>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const heading = useRef<HTMLHeadingElement>(null);
+  const codeInput = useRef<HTMLInputElement>(null);
   const submitLock = useRef(false);
   const pickupTracked = useRef(false);
   const passengerDataStartedTracked = useRef(false);
@@ -486,8 +490,10 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
 
   useEffect(() => { setResume(readCheckout()); }, []);
   useEffect(() => { heading.current?.focus(); }, [step]);
-  useEffect(() => { if (step === 2) void refreshSeats(); }, [step, refreshSeats]);
+  useEffect(() => { if (step === 1) void refreshSeats(); }, [step, refreshSeats]);
   useEffect(() => { setSelectedSeats((current) => current.slice(0, quantity)); }, [quantity]);
+  useEffect(() => { if (selectedSeats.length === quantity) setSeatOpen(false); }, [selectedSeats.length, quantity]);
+  useEffect(() => { if (step === 2 && challengeId && !verificationId) codeInput.current?.focus(); }, [step, challengeId, verificationId]);
 
   function toggleSeat(number: number) {
     if (seatStatus.some((seat) => seat.number === number)) return;
@@ -497,11 +503,11 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
   }
 
   function nextStep(next: number) { setError(""); setMessage(""); setStep(next); }
-  function changePhone(value: string) { setPhone(value); setChallengeId(""); setVerificationId(""); setCode(""); }
+  function changePhone(value: string) { setPhone(value); setChallengeId(""); setVerificationId(""); setCode(""); setOtpError(""); setMessage(""); }
 
   async function requestCode() {
     if (!phoneValid || busy) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setOtpError(""); setMessage("");
     try {
       const response = await fetch("/api/otp/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone }) });
       const result = await response.json();
@@ -509,20 +515,20 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
       setChallengeId(result.challengeId); setVerificationId(""); setCode("");
       trackClarityEvent("otp_requested");
       setMessage("Enviámos um código por SMS para o número indicado.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "O envio falhou. Tenta novamente."); }
+    } catch (cause) { setOtpError(cause instanceof Error ? cause.message : "O envio falhou. Tenta novamente."); }
     finally { setBusy(false); }
   }
 
   async function verifyCode() {
     if (!challengeId || !/^\d{6}$/.test(code) || busy) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setOtpError(""); setMessage("");
     try {
       const response = await fetch("/api/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ challengeId, phone, code }) });
       const result = await response.json();
       if (!response.ok || !result.verified) throw new Error(result.error ?? "Não foi possível verificar o código.");
       setVerificationId(challengeId); setCode(""); setMessage("Número de telefone confirmado.");
       trackClarityEvent("otp_verified");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível confirmar o número."); }
+    } catch (cause) { setOtpError(cause instanceof Error ? cause.message : "Não foi possível confirmar o número."); }
     finally { setBusy(false); }
   }
 
@@ -541,7 +547,7 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
       router.push(checkoutUrl(access));
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : "A ligação falhou. Podes tentar novamente sem duplicar a reserva.";
-      if (/lugar/i.test(text)) setStep(2);
+      if (/lugar/i.test(text)) { setSeatOpen(true); setStep(1); }
       setError(text);
       submitLock.current = false; setBusy(false);
     }
@@ -562,68 +568,64 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
   }
 
   function completePassengerData() {
+    setFormAttempted(true);
     if (!detailsValid) return;
+    if (requiresOtp && !verificationId) { setOtpError("Confirma o telemóvel para continuar."); return; }
     if (!passengerDataCompletedTracked.current) {
       passengerDataCompletedTracked.current = true;
       trackClarityEvent("passenger_data_completed");
     }
-    nextStep(4);
+    nextStep(3);
   }
 
   return <main className="pre-page checkout-page">
     <header className="pre-header"><div className="pre-shell"><Link href="/" aria-label="FestGo — início"><Logo /></Link><Link href="/" className="pre-back"><ArrowLeft size={17} /> Início</Link></div></header>
-    <div className="pre-shell pre-layout">
+    <div className="pre-shell pre-layout checkout-layout">
       <section className="pre-main">
         {resume && <div className="checkout-resume"><p>Tens um checkout guardado nesta sessão.</p><Link className="home-cta" href={checkoutUrl(resume)}>Retomar pagamento <ArrowRight size={16} /></Link><button className="checkout-text-button" onClick={() => { forgetCheckout(); setResume(null); }}>Começar uma nova reserva</button></div>}
-        <div className="checkout-intro-price"><span>{quantity} {quantity === 1 ? "passageiro" : "passageiros"} · ida e volta</span><strong>{formatKz(pricing.total)}</strong></div>
-        <ol className="checkout-progress" aria-label="Progresso da reserva">{["Embarque", "Lugares", "Passageiros", "Resumo"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined} className={step >= index + 1 ? "is-active" : ""}><span aria-hidden="true">{step > index + 1 ? <Check size={14} /> : index + 1}</span>{label}</li>)}</ol>
+        <p className="checkout-event-context">{bookingEvent.name} <span>·</span> {tripDate(bookingEvent.date)} <span>·</span> Transporte de ida e volta</p>
+        <ol className="checkout-progress" aria-label="Progresso da reserva">{["Embarque", "Quem vai contigo", "Resumo"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined} className={step >= index + 1 ? "is-active" : ""}><span aria-hidden="true">{step > index + 1 ? <Check size={14} /> : index + 1}</span>{label}</li>)}</ol>
         <div className="pre-panel">
-          <p className="eyebrow">{bookingEvent.name} · Etapa {step} de 4</p>
-          <h1 ref={heading} tabIndex={-1}>{step === 1 ? "Onde vais embarcar?" : step === 2 ? "Escolhe os lugares." : step === 3 ? "Quem vai contigo?" : "Tudo pronto para pagar?"}</h1>
+          <p className="eyebrow">Etapa {step} de 3</p>
+          <h1 ref={heading} tabIndex={-1}>{step === 1 ? "Onde vais embarcar?" : step === 2 ? "Quem vai contigo?" : "A tua reserva"}</h1>
           {step === 1 && <>
-            <p className="pre-intro">Escolhe a tua zona de embarque. O ponto exacto e a hora serão comunicados por SMS até 25/10/2026. O transporte inclui ida e volta.</p>
-            <fieldset className="checkout-fieldset"><legend className="sr-only">Ponto de embarque</legend><div className="pickup-options">{bookingEvent.pickups.map((point) => <label key={point.id} className={`${pickupId === point.id ? "is-selected" : ""} ${point.available === 0 ? "is-unavailable" : ""}`}><input type="radio" name="pickup" disabled={point.available === 0} checked={pickupId === point.id} onChange={() => { setPickupId(point.id); setPassengerNames((current) => current.slice(0, Math.max(1, point.available))); setSelectedSeats([]); }} /><MapPin size={20} /><span>{point.name}<small>{/por confirmar/i.test(point.address) ? "Ponto exacto por confirmar" : point.address}</small><small>{point.routeName} · {point.departureAt ? tripTime(point.departureAt) : "Horário por confirmar"}{point.available === 0 ? " · Esgotado" : ""}</small></span><Check size={17} /></label>)}</div></fieldset>
-            <label className="pre-field-label">Número de passageiros<select className="pre-field" value={quantity} onChange={(e) => setPassengerNames((current) => Array.from({ length: Number(e.target.value) }, (_, index) => current[index] ?? ""))}>{Array.from({ length: Math.max(1, maxQuantity) }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value} {value === 1 ? "passageiro" : "passageiros"}</option>)}</select></label>
-            <p className="checkout-help">Aplicamos automaticamente os pacotes de dupla e grupo quando reduzirem o total.</p>
-            <Navigation back={() => router.push("/")} next={selectPickupAndContinue} nextDisabled={!pickup || !maxQuantity || quantity > maxQuantity} />
+            <p className="pre-intro">Escolhe a zona de embarque. O ponto exacto e as instruções finais serão comunicados cerca de uma semana antes do evento.</p>
+            <fieldset className="checkout-fieldset"><legend className="sr-only">Ponto de embarque</legend><div className="pickup-options">{bookingEvent.pickups.map((point) => <label key={point.id} className={`${pickupId === point.id ? "is-selected" : ""} ${point.available === 0 ? "is-unavailable" : ""}`}><input type="radio" name="pickup" disabled={point.available === 0} checked={pickupId === point.id} onChange={() => { setPickupId(point.id); setPassengerNames((current) => current.slice(0, Math.max(1, point.available))); setSelectedSeats([]); setSeatOpen(false); }} /><MapPin size={21} /><span><strong>{pickupZone(point.name)}</strong><small>{pickupDetail(point.name, point.address)}</small><small>{point.departureAt ? tripTime(point.departureAt) : "Horário por confirmar"}{point.available === 0 ? " · Esgotado" : ""}</small></span><span className="pickup-check"><Check size={17} /></span></label>)}</div></fieldset>
+            <div className="checkout-quantity-row"><label className="pre-field-label">Quantas pessoas vão viajar?<select className="pre-field" value={quantity} onChange={(e) => setPassengerNames((current) => Array.from({ length: Number(e.target.value) }, (_, index) => current[index] ?? ""))}>{Array.from({ length: Math.max(1, maxQuantity) }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value} {value === 1 ? "passageiro" : "passageiros"}</option>)}</select></label><p>{formatKz(pricing.total)} <small>ida e volta · pacotes aplicados</small></p></div>
+            <section className="checkout-seat-section" aria-label="Escolha de lugares"><div className="checkout-seat-toolbar"><div><strong>Lugares no autocarro</strong><small>{selectedSeats.length === quantity ? `Escolhidos: ${selectedSeats.join(", ")}` : `${selectedSeats.length} de ${quantity} seleccionados`}</small></div><button type="button" className="checkout-seat-toggle" onClick={() => setSeatOpen((current) => !current)}>{seatOpen ? "Fechar mapa" : selectedSeats.length === quantity ? "Alterar" : "Escolher lugares"}</button></div>
+              {seatOpen && <><div className="seat-legend"><span><i /> Disponível</span><span><i className="selected" /> Seleccionado</span><span><i className="unavailable" /> Ocupado</span></div><div className="bus-map" aria-label="Mapa de lugares do autocarro"><div className="bus-front">Frente do autocarro <BusFront size={18} /></div><div className="seat-grid">{Array.from({ length: bookingEvent.capacity }, (_, index) => index + 1).map((number) => { const state = seatStatus.find((seat) => seat.number === number)?.state; const selected = selectedSeats.includes(number); return <button type="button" key={number} aria-label={`Lugar ${number}${selected ? ", seleccionado" : state ? ", indisponível" : ""}`} aria-pressed={selected} disabled={!seatReady || seatLoading || Boolean(state)} className={`seat ${selected ? "selected" : ""} ${state ?? ""}`} onClick={() => toggleSeat(number)}>{number}</button>; })}</div></div><button type="button" className="checkout-text-button checkout-refresh-seats" disabled={seatLoading} onClick={() => void refreshSeats()}>{seatLoading ? "A actualizar…" : "Actualizar disponibilidade"}</button></>}
+              <p className="checkout-help">{seatLoading ? "A carregar lugares…" : "Os lugares ficam temporariamente reservados quando continuares para pagamento."}</p></section>
+            <Navigation back={() => router.push("/")} next={selectPickupAndContinue} nextDisabled={!pickup || !maxQuantity || quantity > maxQuantity || !seatReady || selectedSeats.length !== quantity} />
           </>}
-          {step === 2 && <>
-            <p className="pre-intro">Escolhe {quantity} {quantity === 1 ? "lugar" : "lugares"} no autocarro. Ao continuares para pagamento, ficam temporariamente reservados; a confirmação chega após o pagamento.</p>
-            <div className="checkout-seat-toolbar"><strong>{selectedSeats.length} de {quantity} seleccionados</strong><button type="button" className="checkout-text-button" disabled={seatLoading} onClick={() => void refreshSeats()}>{seatLoading ? "A actualizar…" : "Actualizar lugares"}</button></div>
-            <div className="seat-legend"><span><i /> Disponível</span><span><i className="selected" /> Seleccionado</span><span><i className="unavailable" /> Temporariamente reservado</span><span><i className="confirmed" /> Confirmado</span></div>
-            <div className="bus-map" aria-label="Mapa de lugares do autocarro"><div className="bus-front">Frente do autocarro <BusFront size={18} /></div><div className="seat-grid">{Array.from({ length: bookingEvent.capacity }, (_, index) => index + 1).map((number) => {
-              const state = seatStatus.find((seat) => seat.number === number)?.state;
-              const selected = selectedSeats.includes(number);
-              return <button type="button" key={number} aria-label={`Lugar ${number}${selected ? ", seleccionado" : state ? ", indisponível" : ""}`} aria-pressed={selected} disabled={!seatReady || seatLoading || Boolean(state)} className={`seat ${selected ? "selected" : ""} ${state ?? ""}`} onClick={() => toggleSeat(number)}>{number}</button>;
-            })}</div></div>
-            <p className="checkout-help">{selectedSeats.length === quantity ? `Lugares escolhidos: ${selectedSeats.join(", ")}.` : `Faltam ${quantity - selectedSeats.length} ${quantity - selectedSeats.length === 1 ? "lugar" : "lugares"}.`}</p>
-            <Navigation back={() => nextStep(1)} next={() => nextStep(3)} nextDisabled={!seatReady || seatLoading || selectedSeats.length !== quantity} />
-          </>}
-          {step === 3 && <form data-clarity-mask="true" onChangeCapture={trackPassengerDataStarted} onSubmit={(e) => { e.preventDefault(); completePassengerData(); }}>
-            <p className="pre-intro">Estes nomes aparecem nos bilhetes. Usamos o contacto do responsável para acompanhar a viagem.</p>
-            <div className="contact-grid"><label className="pre-field-label">Nome completo do responsável<input required minLength={4} maxLength={120} className="pre-field" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} /></label><label className="pre-field-label">Telemóvel angolano<input required className="pre-field" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="+244 923 000 000" value={phone} onChange={(e) => changePhone(e.target.value)} aria-describedby="phone-help" /></label><label className="pre-field-label full">E-mail <small>(opcional)</small><input type="email" maxLength={254} className="pre-field" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label></div>
-            <p id="phone-help" className="checkout-help">Indica 9 dígitos, com ou sem +244. Confirma o número antes de continuar.</p>
-            <fieldset className="checkout-fieldset contact-block"><legend>Passageiros</legend><button type="button" className="checkout-text-button" disabled={name.trim().length < 3} onClick={() => setPassengerNames((current) => [name.trim(), ...current.slice(1)])}>Sou o primeiro passageiro</button><div className="passenger-fields">{passengerNames.map((passenger, index) => <label key={index} className="pre-field-label">Passageiro {index + 1}<input required minLength={3} maxLength={120} autoComplete="off" className="pre-field" value={passenger} onChange={(e) => setPassengerNames((current) => current.map((value, position) => position === index ? e.target.value : value))} /></label>)}</div></fieldset>
+          {step === 2 && <form data-clarity-mask="true" onChangeCapture={trackPassengerDataStarted} onSubmit={(e) => { e.preventDefault(); completePassengerData(); }}>
+            <p className="pre-intro">{quantity} {quantity === 1 ? "passageiro" : "passageiros"} · <button type="button" className="checkout-text-button" onClick={() => nextStep(1)}>Alterar quantidade ou lugares</button>. Só precisamos dos nomes para os bilhetes e de um contacto para a reserva.</p>
+            <fieldset className="checkout-fieldset"><legend>Os teus dados</legend><div className="contact-grid"><label className="pre-field-label">Nome completo<input required minLength={4} maxLength={120} className="pre-field" autoComplete="name" placeholder="Nome e apelido" value={name} onChange={(e) => { const value = e.target.value; setPassengerNames((current) => current.map((item, index) => index === 0 && (!item || item === name) ? value : item)); setName(value); }} />{formAttempted && name.trim().length < 4 && <small className="checkout-field-error">Indica o teu nome completo.</small>}</label><label className="pre-field-label">Telemóvel angolano<input required className="pre-field" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="923 000 000" value={phone} onChange={(e) => changePhone(e.target.value)} aria-describedby="phone-help" />{(formAttempted || phone.length > 4) && !phoneValid && <small className="checkout-field-error">Indica 9 dígitos começados por 9.</small>}</label><label className="pre-field-label full">E-mail <small>(opcional)</small><input type="email" maxLength={254} className="pre-field" autoComplete="email" placeholder="nome@exemplo.com" value={email} onChange={(e) => setEmail(e.target.value)} /></label></div></fieldset>
+            <p id="phone-help" className="checkout-help">O código de confirmação será enviado para este número.</p>
+            {requiresOtp && <section className="checkout-otp" aria-label="Verificar telemóvel"><h2>{verificationId ? "Telemóvel confirmado" : "Confirma o teu telemóvel"}</h2>{verificationId ? <p className="checkout-otp-success" role="status"><Check size={18} /> Número confirmado</p> : <><p className="checkout-help">Enviamos um código de 6 dígitos por SMS.</p><button type="button" className="checkout-otp-send" disabled={busy || !phoneValid} onClick={() => void requestCode()}>{busy ? "A processar…" : challengeId ? "Reenviar código" : "Enviar código"}</button>{challengeId && <div className="checkout-otp-form"><label className="pre-field-label">Código recebido<input ref={codeInput} className="pre-field checkout-code-input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} placeholder="000000" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void verifyCode(); } }} /></label><button className="home-cta" disabled={busy || code.length !== 6} type="button" onClick={() => void verifyCode()}>Confirmar</button></div>}</>}{message && !verificationId && <p className="checkout-otp-feedback" role="status">{message}</p>}{otpError && <p className="checkout-field-error" role="alert">{otpError}</p>}</section>}
+            <fieldset className="checkout-fieldset contact-block"><legend>Passageiros</legend><p className="checkout-help">Um nome por bilhete. Se não fores viajar, altera o primeiro nome.</p><div className="passenger-fields">{passengerNames.map((passenger, index) => <label key={index} className="pre-field-label">Passageiro {index + 1}<input required minLength={3} maxLength={120} autoComplete="off" className="pre-field" placeholder={`Nome completo do passageiro ${index + 1}`} value={passenger} onChange={(e) => setPassengerNames((current) => current.map((value, position) => position === index ? e.target.value : value))} />{formAttempted && passenger.trim().length < 3 && <small className="checkout-field-error">Indica o nome do passageiro.</small>}</label>)}</div></fieldset>
             <label className="pre-field-label">Código promocional ou de recomendação <small>(opcional)</small><input className="pre-field" maxLength={80} autoComplete="off" value={referral} onChange={(e) => setReferral(e.target.value)} /></label>
             <label className="check-row"><input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} /><span>Quero receber novidades FestGo. <em>(opcional)</em></span></label>
-            <div className="pre-navigation"><button type="button" className="pre-link-button" onClick={() => nextStep(2)}><ArrowLeft size={16} /> Voltar</button><button className="home-cta" type="submit">Rever reserva <ArrowRight size={17} /></button></div>
-            {!detailsValid && phone && !phoneValid && <p className="pre-error" role="alert">Confirma o número angolano: 9 dígitos começados por 9.</p>}
+            <div className="pre-navigation"><button type="button" className="pre-link-button" onClick={() => nextStep(1)}><ArrowLeft size={16} /> Voltar</button><button className="home-cta" disabled={busy} type="submit">Rever reserva <ArrowRight size={17} /></button></div>
           </form>}
-          {step === 4 && <>
-            <p className="pre-intro">Confirma os dados. O valor final, incluindo qualquer código válido, será apresentado antes de iniciares o pagamento.</p>
-            <dl className="pre-summary-list" data-clarity-mask="true"><Summary label="Evento" value={bookingEvent.name} /><Summary label="Data" value={tripDate(bookingEvent.date)} /><Summary label="Embarque" value={`${pickup?.name} · ${pickup?.departureAt ? tripTime(pickup.departureAt) : "horário por confirmar"}`} /><Summary label="Lugares" value={selectedSeats.join(", ")} /><Summary label="Passageiros" value={passengerNames.join(", ")} /><Summary label="Contacto" value={`${name} · ${phone}`} /><Summary label="Preço individual" value={formatKz(bookingEvent.prices.individual)} /><Summary label="Bilhetes" value={`${quantity} · ${pricingLabel(pricing.composition)}`} />{pricing.discount > 0 && <Summary label="Poupança dos pacotes" value={formatKz(pricing.discount)} />}<Summary label={referral ? "Subtotal antes do código" : "Total a pagar"} value={formatKz(pricing.total)} />{referral && <Summary label="Código a validar" value={referral} />}</dl>
-            <div className="pre-alert"><Info size={18} /><span>{bookingEvent.ticketIncludesEntry ? "O ingresso do evento está incluído." : "O ingresso do Brunch Mangais não está incluído."} Os lugares ficam confirmados depois do pagamento. O ponto exacto e a hora serão enviados por SMS até 25/10/2026. Se não pudermos confirmar o embarque escolhido, oferecemos outro ponto ou reembolso integral.</span></div>
+          {step === 3 && <>
+            <p className="pre-intro">Confirma a viagem antes de continuar para o pagamento.</p>
+            <dl className="pre-summary-list checkout-summary" data-clarity-mask="true"><Summary label="Evento" value={bookingEvent.name} /><Summary label="Data" value={tripDate(bookingEvent.date)} /><Summary label="Embarque" value={pickup?.name ?? "Por confirmar"} /><Summary label="Passageiros" value={`${quantity} · ${passengerNames.join(", ")}`} /><Summary label="Lugares" value={selectedSeats.join(", ")} /><div className="checkout-summary-total"><dt>{referral ? "Valor antes do código" : "Valor"}</dt><dd>{formatKz(pricing.total)}</dd></div>{referral && <Summary label="Código a validar" value={referral} />}</dl>
+            <div className="pre-alert"><Info size={18} /><span>{bookingEvent.ticketIncludesEntry ? "O ingresso do evento está incluído." : "O ingresso do evento não está incluído."} Os lugares ficam confirmados depois do pagamento. O ponto exacto e a hora serão enviados cerca de uma semana antes do evento. Se não pudermos confirmar o embarque escolhido, oferecemos outro ponto ou reembolso integral.</span></div>
             <label className="check-row"><input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} /><span>Li e aceito os <Link href="/termos" target="_blank" rel="noreferrer">Termos e Condições</Link> e a <Link href="/reembolsos" target="_blank" rel="noreferrer">Política de Cancelamento e Reembolso</Link> da FestGo.</span></label>
-            {requiresOtp && <section className="checkout-otp" data-clarity-mask="true" aria-label="Verificar telemóvel"><h2>{verificationId ? "Telemóvel confirmado" : "Confirma o teu telemóvel"}</h2><p className="checkout-help">{verificationId ? "Podes continuar para o pagamento." : `Vamos enviar um código para ${phone}.`}</p>{!verificationId && <><button type="button" className="pre-link-button" disabled={busy || !terms} onClick={requestCode}>{busy ? "A processar…" : challengeId ? "Enviar novo código" : "Receber código por SMS"}</button>{challengeId && <form className="checkout-otp-form" onSubmit={(e) => { e.preventDefault(); void verifyCode(); }}><label className="pre-field-label">Código de 6 dígitos<input className="pre-field" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} required /></label><button className="home-cta" disabled={busy || code.length !== 6} type="submit">Confirmar código</button></form>}</>}</section>}
-            <div className="pre-navigation"><button className="pre-link-button" disabled={busy} onClick={() => nextStep(3)}><ArrowLeft size={16} /> Alterar dados</button><button className="home-cta" disabled={busy || !terms || (requiresOtp && !verificationId)} onClick={reserve}>{busy ? "A preparar checkout…" : "Continuar para pagamento"}<ArrowRight size={17} /></button></div>
+            <div className="pre-navigation"><button className="pre-link-button" disabled={busy} onClick={() => nextStep(2)}><ArrowLeft size={16} /> Alterar dados</button><button className="home-cta" disabled={busy || !terms || (requiresOtp && !verificationId)} onClick={reserve}>{busy ? "A preparar checkout…" : "Continuar para pagamento"}<ArrowRight size={17} /></button></div>
           </>}
-          {message && <p className="invite-success" role="status">{message}</p>}{error && <p className="pre-error" role="alert">{error}</p>}
+          {error && <p className="pre-error" role="alert">{error}</p>}
         </div>
       </section>
-      <aside className="pre-aside"><span className="pre-aside-icon"><BusFront size={21} /></span><small>A tua viagem</small><h2>{bookingEvent.name}</h2><p>{tripDate(bookingEvent.date)}<br />{bookingEvent.venue}</p><hr /><strong>{formatKz(pricing.total)}</strong><p>{quantity} {quantity === 1 ? "passageiro" : "passageiros"} · ida e volta<br />{pricingLabel(pricing.composition)}</p>{pickup && <p>{pickup.name} · {pickup.departureAt ? tripTime(pickup.departureAt) : "horário por confirmar"}</p>}{selectedSeats.length > 0 && <p>Lugares: {selectedSeats.join(", ")}</p>}<p className="pre-aside-note">{bookingEvent.ticketIncludesEntry ? "Inclui ingresso do evento." : "Ingresso do evento adquirido separadamente."}<br />Bilhetes disponíveis no website após pagamento confirmado.</p></aside>
     </div>
   </main>;
 }
 
 function tripDate(date: string) { return new Date(date).toLocaleDateString("pt-AO", { timeZone: "Africa/Luanda", day: "numeric", month: "long", year: "numeric" }); }
 function tripTime(date: string) { return new Date(date).toLocaleTimeString("pt-AO", { timeZone: "Africa/Luanda", hour: "2-digit", minute: "2-digit" }); }
+function pickupZone(name: string) { return name.split(/\s+[—-]\s+/)[0]; }
+function pickupDetail(name: string, address: string) {
+  const detail = name.split(/\s+[—-]\s+/).slice(1).join(" — ");
+  if (address && !/por confirmar/i.test(address) && address !== name) return address;
+  return `${detail || name}${/por confirmar/i.test(address) ? " · ponto exacto por confirmar" : ""}`;
+}
