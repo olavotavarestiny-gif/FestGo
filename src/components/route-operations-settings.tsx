@@ -29,7 +29,8 @@ export function RouteOperationsSettings({ route }: { route: Route }) {
       <label>Nome<input value={point.name} onChange={(event) => setPoints((current) => current.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></label>
       <label>Morada exacta<input value={point.address} onChange={(event) => setPoints((current) => current.map((item, i) => i === index ? { ...item, address: event.target.value } : item))} /></label>
       <label>Partida · hora de Luanda<input type="datetime-local" value={point.departureAt} onChange={(event) => setPoints((current) => current.map((item, i) => i === index ? { ...item, departureAt: event.target.value } : item))} /></label>
-      <label className="admin-check"><input type="checkbox" checked={point.operationalConfirmed} onChange={(event) => setPoints((current) => current.map((item, i) => i === index ? { ...item, operationalConfirmed: event.target.checked } : item))} /> Embarque confirmado</label>
+      <label className="admin-check"><input type="checkbox" checked={point.operationalConfirmed} onChange={(event) => setPoints((current) => current.map((item, i) => i === index ? { ...item, operationalConfirmed: event.target.checked } : item))} /> Zona disponível para venda</label>
+      <small>O horário e a morada exacta podem ser confirmados até 25/10/2026. Preenche ambos antes dessa data para enviar o SMS de embarque.</small>
     </fieldset>)}
     <button disabled={busy} onClick={save}>{busy ? "A guardar…" : "Guardar operação"}</button><p role="status">{message}</p>
   </div></details>;

@@ -12,7 +12,7 @@ const schema = z.object({
   pickupPoints: z.array(z.object({
     id: z.string().min(8).max(40), name: z.string().trim().min(2).max(100), address: z.string().trim().min(3).max(300),
     departureAt: z.string().datetime().nullable(), operationalConfirmed: z.boolean(),
-  }).refine((point) => !point.operationalConfirmed || Boolean(point.departureAt), "Confirma o horário de embarque.")).min(1).max(50),
+  })).min(1).max(50),
 }).strict();
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

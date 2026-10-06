@@ -49,6 +49,7 @@ export default async function TicketsPage({
             minute: "2-digit",
           }) ?? "horário por confirmar"}
         </p>
+        {!privateProbe && !reservation.pickupPoint?.departureAt && <p className="mt-3 text-sm text-amber-200">O horário e o ponto exacto serão enviados por SMS até 25/10/2026. Se não pudermos confirmar este embarque, oferecemos outro ponto ou reembolso integral.</p>}
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           {reservation.passengers.map((passenger) => (
             <article className="card p-5" key={passenger.id}>

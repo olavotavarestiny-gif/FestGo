@@ -47,7 +47,7 @@ try {
       sortOrder: 2,
     },
     {
-      name: "11 de Novembro",
+      name: "Zango — Shopping Outlet",
       address: "Preferência; ponto exacto por confirmar",
       sortOrder: 3,
     },

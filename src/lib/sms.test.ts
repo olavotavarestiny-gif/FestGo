@@ -45,4 +45,10 @@ describe("SMS cost estimation", () => {
     expect(result.encoding).toBe("GSM-7");
     expect(result.segments).toBe(1);
   });
+
+  it("keeps pickup details readable with an exact meeting point", () => {
+    const content = smsTemplates.pickupDetails("Zango — Shopping Outlet", "Entrada principal, junto à paragem", "01/11", "08:30");
+    expect(content).toContain("Entrada principal, junto a paragem, 01/11 as 08:30");
+    expect(analyzeSms(content).encoding).toBe("GSM-7");
+  });
 });

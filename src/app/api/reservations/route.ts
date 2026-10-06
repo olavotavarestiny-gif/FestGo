@@ -72,7 +72,7 @@ export async function POST(request: Request) {
         where: { ...(input.pickupPointId ? { id: input.pickupPointId } : { name: input.pickup }), route: { eventId: event.id, active: true } },
         include: { route: { include: { vehicle: true } } },
       });
-      if (!pickup || !pickup.operationalConfirmed || !pickup.departureAt || pickup.departureAt <= now)
+      if (!pickup || !pickup.operationalConfirmed || (pickup.departureAt && pickup.departureAt <= now))
         throw new BookingError("Este embarque ainda não está confirmado ou já encerrou.", 409);
       const route = pickup.route;
       if (input.passengers.length > await availableCapacity(tx, event, route, now))
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
       }
       const totalAmount = pricing.total - promoDiscount;
       if (totalAmount <= 0) throw new BookingError("Este desconto não permite pagamento online. Contacta a organização.", 400);
-      const holdExpiresAt = new Date(Math.min(now.getTime() + reservationHoldMinutes() * 60_000, pickup.departureAt.getTime(), event.salesCloseAt?.getTime() ?? Infinity));
+      const holdExpiresAt = new Date(Math.min(now.getTime() + reservationHoldMinutes() * 60_000, pickup.departureAt?.getTime() ?? event.eventDate.getTime(), event.salesCloseAt?.getTime() ?? Infinity));
       const reservation = await tx.reservation.create({ data: {
         reference: `FG-${now.getFullYear()}-${randomBytes(6).toString("hex").toUpperCase()}`,
         eventId: event.id, routeId: route.id, pickupPointId: pickup.id, pickupPreference: pickup.name,

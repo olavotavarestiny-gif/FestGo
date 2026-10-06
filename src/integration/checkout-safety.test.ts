@@ -3,6 +3,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as reserve } from "@/app/api/reservations/route";
 import { calculateTicketPricing } from "@/lib/pre-reservations";
+import { getPublicEvent } from "@/lib/public-event";
 
 const enabled = Boolean(process.env.FESTGO_ISOLATED_TEST);
 const prisma = new PrismaClient();
@@ -50,5 +51,17 @@ describe.skipIf(!enabled)("public checkout safeguards on isolated PostgreSQL", (
     const replay = await reserve(request(winner, "10.1.0.13"));
     expect(replay.status).toBe(200);
     expect((await replay.json()).reservationId).toBe(accepted.reservationId);
+  });
+
+  it("offers a confirmed zone and creates a paid-flow hold while its departure time is pending", async () => {
+    await prisma.route.update({ where: { id: routeId }, data: { capacity: 3 } });
+    await prisma.pickupPoint.update({ where: { id: pickupId }, data: { departureAt: null, address: "Preferência; ponto exacto por confirmar" } });
+    const event = await getPublicEvent();
+    expect(event?.pickups.find((point) => point.id === pickupId)?.departureAt).toBeNull();
+    const response = await reserve(request(body("103"), "10.1.0.14"));
+    expect(response.status).toBe(201);
+    const created = await prisma.reservation.findUniqueOrThrow({ where: { id: (await response.json()).reservationId } });
+    expect(created.pickupPointId).toBe(pickupId);
+    expect(created.holdExpiresAt?.getTime()).toBeGreaterThan(Date.now());
   });
 });

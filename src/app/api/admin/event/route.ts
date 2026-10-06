@@ -32,8 +32,8 @@ export async function PATCH(request: Request) {
         { status: 409 },
       );
     const event = await prisma.event.findUnique({ where: { slug: "brunch-mangais" }, include: { routes: { where: { active: true }, include: { pickupPoints: true } } } });
-    if (!event || event.eventDate <= new Date() || !event.routes.some((route) => route.capacity > 0 && route.pickupPoints.some((point) => point.operationalConfirmed && point.departureAt && point.departureAt > new Date())))
-      return NextResponse.json({ error: "Confirma pelo menos um embarque futuro e a capacidade antes de abrir vendas." }, { status: 409 });
+    if (!event || event.eventDate <= new Date() || !event.routes.some((route) => route.capacity > 0 && route.pickupPoints.some((point) => point.operationalConfirmed && (!point.departureAt || point.departureAt > new Date()))))
+      return NextResponse.json({ error: "Confirma pelo menos um ponto de embarque e a capacidade antes de abrir vendas." }, { status: 409 });
     let provider: string;
     try { provider = defaultPaymentProvider(); }
     catch { return NextResponse.json({ error: "O fornecedor de pagamento é inválido." }, { status: 409 }); }

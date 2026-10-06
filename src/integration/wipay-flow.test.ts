@@ -174,6 +174,18 @@ describe.skipIf(!enabled)("WiPay callback flow", () => {
     })).toBe(1);
   });
 
+  it("issues a ticket when a paid zone is confirmed but its departure time is pending", async () => {
+    const route = await prisma.route.findFirstOrThrow({ where: { eventId, active: true }, include: { pickupPoints: true } });
+    const point = route.pickupPoints[0];
+    await prisma.pickupPoint.update({ where: { id: point.id }, data: { operationalConfirmed: true, departureAt: null } });
+    const prepared = await preparedPayment({});
+    await prisma.reservation.update({ where: { id: prepared.reservation.id }, data: { routeId: route.id, pickupPointId: point.id } });
+    const response = await wipayCallback(callbackRequest(payloadFor(prepared)));
+    expect(response.status).toBe(200);
+    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: prepared.reservation.id } })).status).toBe("PAID");
+    expect(await prisma.ticket.count({ where: { passenger: { reservationId: prepared.reservation.id } } })).toBe(1);
+  });
+
   it("binds an early callback to its random reference when the provider ID is not persisted yet", async () => {
     const prepared = await preparedPayment({ seat: 14 });
     await prisma.payment.update({

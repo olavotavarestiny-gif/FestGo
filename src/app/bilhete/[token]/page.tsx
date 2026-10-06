@@ -95,7 +95,7 @@ export default async function TicketPage({
                     hour: "2-digit",
                     minute: "2-digit",
                   },
-                )}
+                ) ?? "A confirmar por SMS até 25/10/2026"}
               </dd>
             </div>
             <div className="col-span-2">

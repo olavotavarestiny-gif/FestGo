@@ -66,7 +66,7 @@ export default async function Home() {
           <div className="experience-price"><strong>{formatKz(price)}</strong><span>/ pessoa</span></div>
           <p className="experience-includes">Ida e volta <i /> Welcome Drink <i /> FestGo Power* <i /> Entretenimento <i /> Regresso organizado</p>
           <div className="hero-actions"><CampaignLink className="home-cta" eventName="hero_reservation_click">{callToAction} transporte <ArrowRight size={18} /></CampaignLink><Link href="#servicos" className="text-link">Descobrir o que está incluído <ArrowDownRight size={18} /></Link></div>
-          <p className="hero-note">{preMode ? "Pré-reserva sem pagamento." : publicEvent?.salesOpen ? "Escolhe o embarque, paga online e recebe os bilhetes no site." : "Reservas online disponíveis após confirmação dos horários e abertura das vendas."} O ingresso do Brunch Mangais não está incluído.</p>
+          <p className="hero-note">{preMode ? "Pré-reserva sem pagamento." : publicEvent?.salesOpen ? "Escolhe a zona de embarque, paga online e recebe os bilhetes no site. Hora e ponto exacto por SMS até 25/10/2026." : "Reservas online disponíveis após abertura das vendas."} O ingresso do Brunch Mangais não está incluído.</p>
         </div>
         <div className="experience-visual" aria-label="Percurso FestGo entre Luanda e o Brunch Mangais">
           <div className="visual-top"><span>Luanda</span><span>01 · 11 · 2026</span><span>Mangais</span></div><BusRouteArtwork />

@@ -138,7 +138,7 @@ export function parseBirthDate(value: string) {
 export const pickupPreferences = [
   { code: "CIDADE_PRIMEIRO_MAIO", label: "Cidade — Primeiro de Maio" },
   { code: "TALATONA_BELAS", label: "Talatona — Belas Shopping" },
-  { code: "11_NOVEMBRO", label: "11 de Novembro" },
+  { code: "11_NOVEMBRO", label: "Zango — Shopping Outlet" },
   { code: "BENFICA_GIRAFA", label: "Benfica — Girafa" },
   { code: "OUTRO", label: "Outro" },
 ] as const;

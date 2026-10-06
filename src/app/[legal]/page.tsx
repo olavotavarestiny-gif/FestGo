@@ -75,6 +75,17 @@ export default async function LegalPage({
               temporariamente reservados.
             </p>
           </section>
+          {(legal === "termos" || legal === "cancelamentos") && (
+            <section>
+              <h2 className="text-xl font-black text-white">Embarque do Brunch Mangais de 1 de novembro</h2>
+              <p className="mt-2">
+                Ao comprar, escolhes uma zona de embarque. A FestGo comunicará por SMS
+                o ponto de encontro exacto e o horário até 25 de outubro de 2026.
+                Se não conseguir confirmar o embarque escolhido, oferece outro ponto
+                ou o reembolso integral ao passageiro afectado.
+              </p>
+            </section>
+          )}
           <section>
             <h2 className="text-xl font-black text-white">Contacto</h2>
             <p className="mt-2">

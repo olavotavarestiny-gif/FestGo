@@ -170,7 +170,7 @@ export async function finalizeVerifiedPayment(input: VerifiedPayment) {
         ["CANCELLED", "CLOSED"].includes(reservation.event.status) ||
         reservation.event.eventDate <= now ||
         (!reservation.route && seats.length === 0) ||
-        (reservation.route !== null && (!reservation.route.active || !reservation.pickupPoint?.operationalConfirmed || !reservation.pickupPoint.departureAt || reservation.pickupPoint.routeId !== reservation.routeId)) ||
+        (reservation.route !== null && (!reservation.route.active || !reservation.pickupPoint?.operationalConfirmed || reservation.pickupPoint.routeId !== reservation.routeId)) ||
         reservation.passengers.length !== reservation.quantity;
       if (capacityConflict || seatConflict || invalidState) {
         // The money was received, but a late capture must never oversell or

@@ -5,7 +5,7 @@ import { canRecoverCheckout, checkoutRecoveryLink } from "@/lib/payment-invitati
 import { createTicketBundleToken } from "@/lib/ticket-access";
 import { analyzeSms, smsTemplates } from "@/lib/sms";
 
-const TEMPLATES = ["BOOKING_PAID", "EVENT_REMINDER", "ABANDONED_CHECKOUT"];
+const TEMPLATES = ["BOOKING_PAID", "PICKUP_DETAILS", "EVENT_REMINDER", "ABANDONED_CHECKOUT"];
 const MAX_ATTEMPTS = 3;
 
 export async function queueNotifications(now = new Date()) {
@@ -15,10 +15,20 @@ export async function queueNotifications(now = new Date()) {
     data: { status: "CANCELLED", lastError: "Comunicação substituída pelo checkout no website." },
   });
   const reminders = await prisma.reservation.findMany({
-    where: { status: "PAID", notifications: { none: { template: "EVENT_REMINDER", channel: "SMS" } }, event: { status: { not: "CANCELLED" }, eventDate: { gte: new Date(now.getTime() + 18 * 60 * 60_000), lte: new Date(now.getTime() + 30 * 60 * 60_000) } } },
+    where: { status: "PAID", reference: { not: { startsWith: "FG-TEST-" } }, notifications: { none: { template: "EVENT_REMINDER", channel: "SMS" } }, event: { status: { not: "CANCELLED" }, eventDate: { gte: new Date(now.getTime() + 18 * 60 * 60_000), lte: new Date(now.getTime() + 30 * 60 * 60_000) } } },
     select: { id: true, customer: { select: { phone: true } } }, take: 100,
   });
   if (reminders.length) await prisma.notification.createMany({ data: reminders.map((r) => ({ reservationId: r.id, channel: "SMS" as const, recipient: r.customer.phone, template: "EVENT_REMINDER" })), skipDuplicates: true });
+
+  const pickupDetails = await prisma.reservation.findMany({
+    where: {
+      status: "PAID", reference: { not: { startsWith: "FG-TEST-" } }, notifications: { none: { template: "PICKUP_DETAILS", channel: "SMS" } },
+      event: { status: { not: "CANCELLED" }, eventDate: { gt: now, lte: new Date(now.getTime() + 7 * 24 * 60 * 60_000) } },
+      pickupPoint: { operationalConfirmed: true, departureAt: { not: null }, address: { not: "Preferência; ponto exacto por confirmar" } },
+    },
+    select: { id: true, customer: { select: { phone: true } } }, take: 100,
+  });
+  if (pickupDetails.length) await prisma.notification.createMany({ data: pickupDetails.map((r) => ({ reservationId: r.id, channel: "SMS" as const, recipient: r.customer.phone, template: "PICKUP_DETAILS" })), skipDuplicates: true });
 
   const delay = abandonedCheckoutFollowupMinutes();
   const abandoned = delay <= 0 ? [] : await prisma.reservation.findMany({
@@ -35,7 +45,7 @@ export async function queueNotifications(now = new Date()) {
     select: { id: true, customer: { select: { phone: true } } }, take: 100,
   });
   if (abandoned.length) await prisma.notification.createMany({ data: abandoned.map((r) => ({ reservationId: r.id, channel: "SMS" as const, recipient: r.customer.phone, template: "ABANDONED_CHECKOUT" })), skipDuplicates: true });
-  return { remindersQueued: reminders.length, abandonedQueued: abandoned.length };
+  return { remindersQueued: reminders.length, pickupDetailsQueued: pickupDetails.length, abandonedQueued: abandoned.length };
 }
 
 export async function processNotificationJobs(options: { limit?: number } = {}) {
@@ -87,7 +97,15 @@ export async function processNotificationJobs(options: { limit?: number } = {}) 
           }
           const token = createTicketBundleToken(reservation.reference, expires);
           const link = `${publicBaseUrl()}/reserva/${encodeURIComponent(reservation.reference)}/bilhetes?token=${encodeURIComponent(token)}`;
-          if (job.template === "EVENT_REMINDER") {
+          if (job.template === "PICKUP_DETAILS") {
+            if (!reservation.pickupPoint?.operationalConfirmed || !reservation.pickupPoint.departureAt || reservation.pickupPoint.address === "Preferência; ponto exacto por confirmar") {
+              await tx.notification.update({ where: { id: job.id }, data: { status: "BLOCKED", lastError: "Falta confirmar o ponto exacto ou o horário." } });
+              return false;
+            }
+            const time = reservation.pickupPoint.departureAt.toLocaleTimeString("pt-AO", { timeZone: "Africa/Luanda", hour: "2-digit", minute: "2-digit" });
+            const date = reservation.pickupPoint.departureAt.toLocaleDateString("pt-AO", { timeZone: "Africa/Luanda", day: "2-digit", month: "2-digit" });
+            content = smsTemplates.pickupDetails(reservation.pickupPoint.name, reservation.pickupPoint.address, date, time);
+          } else if (job.template === "EVENT_REMINDER") {
             if (!reservation.pickupPoint?.departureAt) {
               await tx.notification.update({ where: { id: job.id }, data: { status: "BLOCKED", lastError: "Falta confirmar o horário de embarque." } });
               return false;

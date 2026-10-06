@@ -14,7 +14,7 @@ export const event = {
       name: "Talatona",
       detail: "Belas Shopping",
     },
-    { name: "11 de Novembro", detail: "Preferência de recolha" },
+    { name: "Zango", detail: "Shopping Outlet" },
     { name: "Benfica", detail: "Girafa" },
     { name: "Outro", detail: "Indica a tua localização" },
   ],

@@ -12,7 +12,7 @@ export type PublicEvent = {
   ticketIncludesEntry: boolean;
   salesOpen: boolean;
   travelDuration: string | null;
-  pickups: Array<{ id: string; name: string; address: string; routeName: string; departureAt: string; available: number }>;
+  pickups: Array<{ id: string; name: string; address: string; routeName: string; departureAt: string | null; available: number }>;
 };
 
 // Explicit field selection keeps operational contacts and private group links server-side.
@@ -28,7 +28,7 @@ export const getPublicEvent = cache(async (slug = "brunch-mangais"): Promise<Pub
         estimatedTravelDuration: true, travelEstimateConfirmed: true,
         routes: { where: { active: true }, select: {
           id: true, name: true, capacity: true,
-          pickupPoints: { where: { operationalConfirmed: true, departureAt: { not: null } }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, address: true, departureAt: true } },
+          pickupPoints: { where: { operationalConfirmed: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, address: true, departureAt: true } },
         } },
       },
     });
@@ -50,9 +50,9 @@ export const getPublicEvent = cache(async (slug = "brunch-mangais"): Promise<Pub
       ticketIncludesEntry: event.ticketIncludesEntry,
       salesOpen: event.status === "ON_SALE" && event.eventDate > now && (!event.salesOpenAt || event.salesOpenAt <= now) && (!event.salesCloseAt || event.salesCloseAt > now),
       travelDuration: event.travelEstimateConfirmed ? event.estimatedTravelDuration : null,
-      pickups: event.routes.flatMap((route) => route.pickupPoints.map((point) => ({
+      pickups: event.routes.flatMap((route) => route.pickupPoints.filter((point) => !point.departureAt || point.departureAt > now).map((point) => ({
         id: point.id, name: point.name, address: point.address, routeName: route.name,
-        departureAt: point.departureAt!.toISOString(),
+        departureAt: point.departureAt?.toISOString() ?? null,
         available: Math.max(0, Math.min(event.capacity - occupied, route.capacity - (held.find((row) => row.routeId === route.id)?._sum.quantity ?? 0))),
       }))),
     };
