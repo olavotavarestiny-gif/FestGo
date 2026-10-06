@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { POST as reserve } from "@/app/api/reservations/route";
+import { GET as availableSeats } from "@/app/api/reservations/seats/route";
 import { calculateTicketPricing } from "@/lib/pre-reservations";
 import { getPublicEvent } from "@/lib/public-event";
 import { TERMS_VERSION } from "@/lib/terms";
@@ -50,6 +51,7 @@ describe.skipIf(!enabled)("public checkout safeguards on isolated PostgreSQL", (
     const event = await prisma.event.findUniqueOrThrow({ where: { slug: "brunch-mangais" } });
     expect(accepted.total).toBe(calculateTicketPricing(1, { individual: Number(event.individualPrice), duo: Number(event.duoPrice), group: Number(event.groupPrice) }).total);
     expect(await prisma.reservation.findUniqueOrThrow({ where: { id: accepted.reservationId } })).toMatchObject({ routeId, termsAcceptedAt: expect.any(Date) });
+    expect(await prisma.seatPreference.findMany({ where: { reservationId: accepted.reservationId }, select: { seatNumber: true, status: true } })).toEqual([{ seatNumber: 1, status: "TEMPORARILY_HELD" }]);
     expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "TERMS_ACCEPTED", entityType: "Reservation", entityId: accepted.reservationId } })).metadata).toMatchObject({ version: TERMS_VERSION });
     const replay = await reserve(request(winner, "10.1.0.13"));
     expect(replay.status).toBe(200);
@@ -61,10 +63,17 @@ describe.skipIf(!enabled)("public checkout safeguards on isolated PostgreSQL", (
     await prisma.pickupPoint.update({ where: { id: pickupId }, data: { departureAt: null, address: "Preferência; ponto exacto por confirmar" } });
     const event = await getPublicEvent();
     expect(event?.pickups.find((point) => point.id === pickupId)?.departureAt).toBeNull();
-    const response = await reserve(request(body("103"), "10.1.0.14"));
+    const response = await reserve(request({ ...body("103"), seats: [2] }, "10.1.0.14"));
     expect(response.status).toBe(201);
     const created = await prisma.reservation.findUniqueOrThrow({ where: { id: (await response.json()).reservationId } });
     expect(created.pickupPointId).toBe(pickupId);
     expect(created.holdExpiresAt?.getTime()).toBeGreaterThan(Date.now());
+    expect(await prisma.seatPreference.findMany({ where: { reservationId: created.id }, select: { seatNumber: true, status: true } })).toEqual([{ seatNumber: 2, status: "TEMPORARILY_HELD" }]);
+    expect((await reserve(request({ ...body("104"), seats: [2] }, "10.1.0.15"))).status).toBe(409);
+    const inventory = await availableSeats();
+    expect(inventory.status).toBe(200);
+    expect((await inventory.json()).seats).toEqual(expect.arrayContaining([
+      { number: 1, state: "unavailable" }, { number: 2, state: "unavailable" },
+    ]));
   });
 });

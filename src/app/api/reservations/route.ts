@@ -20,6 +20,7 @@ const bookingSchema = z.object({
   pickup: z.string().trim().min(2).max(100).optional(),
   pickupPointId: z.string().min(8).max(40).optional(),
   passengers: z.array(z.string().trim().min(3).max(120)).min(1).max(100),
+  seats: z.array(z.number().int().min(1).max(100)).max(100).optional(),
   referral: z.string().trim().max(80).optional().default(""),
   terms: z.literal(true),
   marketing: z.boolean().default(false),
@@ -54,11 +55,12 @@ export async function POST(request: Request) {
     // Even replay requests are rate limited. The UUID is a recovery capability, never a sequential ID.
     await enforceRateLimit({ namespace: "reservation-ip", identifier: clientIp(request), limit: 30, windowMs: 60 * 60_000 });
     const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
-      const existing = await tx.reservation.findUnique({ where: { idempotencyKey: input.idempotencyKey }, include: { customer: true, passengers: true, event: true, pickupPoint: true } });
+      const existing = await tx.reservation.findUnique({ where: { idempotencyKey: input.idempotencyKey }, include: { customer: true, passengers: true, event: true, pickupPoint: true, seatPreferences: { where: { releasedAt: null } } } });
       if (existing) {
         if (existing.customer.phone !== phone || (existing.customer.email ?? "") !== input.email || existing.event.slug !== input.eventSlug ||
           existing.quantity !== input.passengers.length || (input.pickupPointId ? existing.pickupPointId !== input.pickupPointId : existing.pickupPoint?.name !== input.pickup) ||
-          existing.passengers.some((passenger) => !input.passengers.includes(passenger.fullName)))
+          existing.passengers.some((passenger) => !input.passengers.includes(passenger.fullName)) ||
+          (input.seats && (input.seats.length !== existing.seatPreferences.length || input.seats.some((seat) => !existing.seatPreferences.some((item) => item.seatNumber === seat)))))
           throw new BookingError("Esta chave já pertence a uma reserva com outros dados.", 409);
         return { reservation: existing, reused: true };
       }
@@ -79,6 +81,17 @@ export async function POST(request: Request) {
       const route = pickup.route;
       if (input.passengers.length > await availableCapacity(tx, event, route, now))
         throw new BookingError("Já não há lugares suficientes para esta reserva.", 409);
+      if (input.seats && (input.seats.length !== input.passengers.length || new Set(input.seats).size !== input.seats.length || input.seats.some((seat) => seat > event.capacity)))
+        throw new BookingError("Escolhe um lugar diferente para cada passageiro.", 400);
+      const taken = await tx.seatPreference.findMany({
+        where: { eventId: event.id, releasedAt: null },
+        select: { seatNumber: true },
+      });
+      const unavailableSeats = new Set(taken.map((seat) => seat.seatNumber));
+      const seats = input.seats ?? Array.from({ length: event.capacity }, (_, index) => index + 1)
+        .filter((seat) => !unavailableSeats.has(seat)).slice(0, input.passengers.length);
+      if (seats.length !== input.passengers.length || seats.some((seat) => unavailableSeats.has(seat)))
+        throw new BookingError("Um dos lugares já não está disponível. Escolhe outro.", 409);
 
       const challenge = input.verificationId ? await tx.sMSVerification.findFirst({
         where: { id: input.verificationId, phone, verifiedAt: { not: null }, usedAt: null, expiresAt: { gt: now } },
@@ -131,6 +144,7 @@ export async function POST(request: Request) {
         discountAmount: pricing.discount + promoDiscount, totalAmount, pricingBreakdown: pricing,
         currency: event.currency, holdExpiresAt, termsAcceptedAt: now, idempotencyKey: input.idempotencyKey,
         passengers: { create: input.passengers.map((fullName) => ({ fullName })) },
+        seatPreferences: { create: seats.map((seatNumber) => ({ eventId: event.id, seatNumber, status: "TEMPORARILY_HELD" })) },
       } });
       if (referralCodeId) await tx.referralRedemption.create({ data: { referralCodeId, reservationId: reservation.id, amount: promoDiscount } });
       await tx.auditLog.create({ data: { action: "TERMS_ACCEPTED", entityType: "Reservation", entityId: reservation.id, metadata: { version: TERMS_VERSION, acceptedAt: now.toISOString() } } });

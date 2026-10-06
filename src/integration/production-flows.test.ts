@@ -260,6 +260,11 @@ describe.skipIf(!enabled)("production database flows", () => {
   });
 
   it("calculates quantities 1 to 8 and identifies minors", async () => {
+    // Earlier checkout holds belong to another phase of this isolated suite.
+    await prisma.seatPreference.updateMany({
+      where: { status: "TEMPORARILY_HELD", releasedAt: null },
+      data: { status: "RELEASED", releasedAt: new Date() },
+    });
     process.env.BOOKING_MODE = "PRE_RESERVATION";
     process.env.PRE_RESERVATIONS_ENABLED = "true";
     process.env.PAYMENTS_ENABLED = "false";
