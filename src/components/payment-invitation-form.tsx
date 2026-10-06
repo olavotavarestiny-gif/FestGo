@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { BusFront, Check, MapPin, Users } from "lucide-react";
 import { formatKz } from "@/lib/data";
 import {
@@ -71,6 +72,7 @@ export function PaymentInvitationForm({
   const [paymentAccess, setPaymentAccess] = useState<{ reservationId: string; accessToken: string } | null>(null);
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [selectedPaymentProvider, setSelectedPaymentProvider] = useState(paymentProvider);
+  const [terms, setTerms] = useState(false);
   const pricing = useMemo(() => calculateTicketPricing(quantity, prices), [quantity, prices]);
   const unavailableSet = useMemo(() => new Set(unavailable), [unavailable]);
   const availableCount = capacity - unavailable.length;
@@ -125,6 +127,7 @@ export function PaymentInvitationForm({
           pickupOther,
           minorGuardianName: guardianName,
           minorGuardianPhone: guardianPhone,
+          terms,
         }),
       });
       const result = await response.json();
@@ -175,7 +178,8 @@ export function PaymentInvitationForm({
     passengers.every((passenger) => passenger.fullName.trim().length >= 3 && passenger.birthDate) &&
     seats.length === quantity &&
     (pickup !== "OUTRO" || pickupOther.trim().length >= 3) &&
-    (!includesMinors || (guardianName.trim().length >= 4 && /^(?:\+?244\s?)?9(?:[\s-]?\d){8}$/.test(guardianPhone.trim())));
+    (!includesMinors || (guardianName.trim().length >= 4 && /^(?:\+?244\s?)?9(?:[\s-]?\d){8}$/.test(guardianPhone.trim()))) &&
+    terms;
 
   return (
     <main className="pre-page">
@@ -220,6 +224,7 @@ export function PaymentInvitationForm({
               <div className="bus-map"><div className="bus-front"><BusFront size={17} /> Frente</div><div className="seat-grid">{Array.from({ length: capacity }, (_, index) => index + 1).map((number) => { const blocked = unavailableSet.has(number); const selected = seats.includes(number); return <button type="button" className={`seat ${blocked ? "unavailable" : selected ? "selected" : ""}`} disabled={blocked} onClick={() => toggleSeat(number)} key={number} aria-label={`Lugar ${number}${blocked ? " indisponível" : selected ? " seleccionado" : ""}`}>{number}</button>; })}</div></div>
             </div>
 
+            <label className="check-row"><input type="checkbox" checked={terms} onChange={(event) => { setTerms(event.target.checked); invalidatePayment(); }} /><span>Li e aceito os <Link href="/termos" target="_blank" rel="noreferrer">Termos e Condições</Link> e a <Link href="/reembolsos" target="_blank" rel="noreferrer">Política de Cancelamento e Reembolso</Link> da FestGo.</span></label>
             {error && <p className="pre-error" role="alert">{error}</p>}
             {success && <div className="invite-success" role="status"><Check size={18} /> {success}</div>}
             <button className="home-cta mt-6" type="button" disabled={busy || !valid} onClick={confirm}>{busy ? "A guardar…" : "Confirmar bilhetes e dados"}</button>

@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { POST as reserve } from "@/app/api/reservations/route";
 import { calculateTicketPricing } from "@/lib/pre-reservations";
 import { getPublicEvent } from "@/lib/public-event";
+import { TERMS_VERSION } from "@/lib/terms";
 
 const enabled = Boolean(process.env.FESTGO_ISOLATED_TEST);
 const prisma = new PrismaClient();
@@ -39,6 +40,7 @@ describe.skipIf(!enabled)("public checkout safeguards on isolated PostgreSQL", (
   it("rejects browser-controlled money and respects the last route seat concurrently", async () => {
     const first = body("101");
     const second = body("102");
+    expect((await reserve(request({ ...first, terms: false }, "10.1.0.9"))).status).toBe(400);
     const manipulated = await reserve(request({ ...first, totalAmount: 1, status: "PAID" }, "10.1.0.10"));
     expect(manipulated.status).toBe(400);
     const responses = await Promise.all([reserve(request(first, "10.1.0.11")), reserve(request(second, "10.1.0.12"))]);
@@ -47,7 +49,8 @@ describe.skipIf(!enabled)("public checkout safeguards on isolated PostgreSQL", (
     const accepted = await (responses[0].status === 201 ? responses[0] : responses[1]).json();
     const event = await prisma.event.findUniqueOrThrow({ where: { slug: "brunch-mangais" } });
     expect(accepted.total).toBe(calculateTicketPricing(1, { individual: Number(event.individualPrice), duo: Number(event.duoPrice), group: Number(event.groupPrice) }).total);
-    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: accepted.reservationId } })).routeId).toBe(routeId);
+    expect(await prisma.reservation.findUniqueOrThrow({ where: { id: accepted.reservationId } })).toMatchObject({ routeId, termsAcceptedAt: expect.any(Date) });
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "TERMS_ACCEPTED", entityType: "Reservation", entityId: accepted.reservationId } })).metadata).toMatchObject({ version: TERMS_VERSION });
     const replay = await reserve(request(winner, "10.1.0.13"));
     expect(replay.status).toBe(200);
     expect((await replay.json()).reservationId).toBe(accepted.reservationId);

@@ -4,6 +4,7 @@ import { ArrowLeft, Mail, MapPin, Phone, Users } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { PreReservationAdminActions } from "@/components/pre-reservation-admin-actions";
 import { PaymentInvitationAdminActions } from "@/components/payment-invitation-admin-actions";
+import { RefundAdminActions } from "@/components/refund-admin-actions";
 import { planLabels, reservationStatusLabels } from "@/lib/admin-reservations";
 import { requireStaff } from "@/lib/auth";
 import { formatKz } from "@/lib/data";
@@ -25,6 +26,7 @@ const notificationLabels: Record<string, string> = {
   PRE_RESERVATION_APPROVED: "SMS de aprovação",
   PAYMENT_LINK: "SMS de pagamento",
   BOOKING_PAID: "SMS de compra confirmada",
+  PICKUP_DETAILS: "SMS de embarque confirmado",
   EVENT_REMINDER: "Lembrete do evento",
 };
 
@@ -192,6 +194,7 @@ export default async function ReservationPage({
                   }
                 />
               </div>
+              {reservation.status === "PAID" && confirmedPayment && <RefundAdminActions reservationId={reservation.id} total={Number(reservation.totalAmount)} />}
             </div>
           </aside>
         </div>

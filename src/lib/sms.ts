@@ -59,7 +59,7 @@ export const smsTemplates = {
     return `FestGo: A reserva ${reference} aguarda pagamento. Continua enquanto os lugares estao reservados: ${link}`;
   },
   paymentConfirmed(link: string, reference?: string) {
-    return `FestGo: Pagamento confirmado${reference ? `! Reserva ${reference}` : ""}. Bilhetes: ${link}. Hora e ponto exacto por SMS ate 25/10/2026.`;
+    return `FestGo: Pagamento confirmado${reference ? `! Reserva ${reference}` : ""}. Bilhetes: ${link}. Horarios e instrucoes finais por SMS e WhatsApp cerca de 1 semana antes do evento.`;
   },
   pickupDetails(pickup: string, address: string, date: string, time: string) {
     const clean = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").slice(0, 100);

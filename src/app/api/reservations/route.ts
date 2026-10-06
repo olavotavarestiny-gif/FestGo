@@ -8,6 +8,8 @@ import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { arePaymentsEnabled, calculateTicketPricing, legacyPlanForQuantity, normalizeAngolanPhone } from "@/lib/pre-reservations";
 import { isOtpRequired, reservationHoldMinutes } from "@/lib/config";
 import { availableCapacity, occupiedReservations } from "@/lib/capacity";
+import { pickupAvailableForSale } from "@/lib/pickup-availability";
+import { TERMS_VERSION } from "@/lib/terms";
 
 export const runtime = "nodejs";
 const bookingSchema = z.object({
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
         where: { ...(input.pickupPointId ? { id: input.pickupPointId } : { name: input.pickup }), route: { eventId: event.id, active: true } },
         include: { route: { include: { vehicle: true } } },
       });
-      if (!pickup || !pickup.operationalConfirmed || (pickup.departureAt && pickup.departureAt <= now))
+      if (!pickup || !pickupAvailableForSale(pickup, now))
         throw new BookingError("Este embarque ainda não está confirmado ou já encerrou.", 409);
       const route = pickup.route;
       if (input.passengers.length > await availableCapacity(tx, event, route, now))
@@ -131,6 +133,7 @@ export async function POST(request: Request) {
         passengers: { create: input.passengers.map((fullName) => ({ fullName })) },
       } });
       if (referralCodeId) await tx.referralRedemption.create({ data: { referralCodeId, reservationId: reservation.id, amount: promoDiscount } });
+      await tx.auditLog.create({ data: { action: "TERMS_ACCEPTED", entityType: "Reservation", entityId: reservation.id, metadata: { version: TERMS_VERSION, acceptedAt: now.toISOString() } } });
       if (challenge) await tx.sMSVerification.update({ where: { id: challenge.id }, data: { usedAt: now } });
       return { reservation, reused: false };
     }, { isolationLevel: "Serializable", timeout: 15_000, maxWait: 10_000 }));

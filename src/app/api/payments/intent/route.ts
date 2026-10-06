@@ -11,6 +11,7 @@ import { availablePaymentProviders, defaultPaymentProvider, publicPaymentDetails
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { publicBaseUrl } from "@/lib/config";
 import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
+import { TERMS_VERSION } from "@/lib/terms";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -68,6 +69,11 @@ export async function POST(request: Request) {
         include: { customer: true, event: true, payments: { where: { status: { in: [...livePaymentStatuses] } }, orderBy: { createdAt: "desc" } } },
       });
       if (privateProbe !== isPrivateWiPayProbe(reservation)) throw new IntentError("Reserva inválida.", 409);
+      if (!privateProbe) {
+        const acceptance = await tx.auditLog.findFirst({ where: { action: "TERMS_ACCEPTED", entityType: "Reservation", entityId: reservation.id }, orderBy: { createdAt: "desc" } });
+        if (!reservation.termsAcceptedAt || !acceptance || typeof acceptance.metadata !== "object" || !acceptance.metadata || Array.isArray(acceptance.metadata) || acceptance.metadata.version !== TERMS_VERSION)
+          throw new IntentError("Confirma os Termos e a Política de Reembolso antes de pagar.", 409);
+      }
       if (!payableStates.some((status) => status === reservation.status)) throw new IntentError("Esta reserva já não pode receber um pagamento.", 409);
       if (["CANCELLED", "CLOSED"].includes(reservation.event.status) || reservation.event.eventDate <= new Date())
         throw new IntentError("Este evento já não aceita pagamentos.", 409);

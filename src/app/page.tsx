@@ -39,8 +39,8 @@ const questions = [
   ["A FestGo vai buscar-me e deixar-me em casa?", "Podes indicar preferências de embarque e regresso. As zonas e os pontos finais serão organizados e confirmados antes da viagem; não prometemos cobertura de qualquer morada."],
   ["Posso reservar para um grupo?", "Sim. Podes registar vários passageiros e o sistema aplica a combinação disponível mais económica."],
   ["Como funciona o pagamento?", "Quando as vendas estiverem abertas, escolhes o embarque e pagas no checkout. Após confirmação segura do pagamento, os bilhetes ficam disponíveis no website."],
-  ["Quais são as condições de cancelamento?", "As condições aplicáveis estarão disponíveis antes do pagamento e podem ser consultadas na página de cancelamentos."],
-  ["Como contacto a equipa?", "Após a inscrição, a equipa usa o contacto indicado para o acompanhamento operacional da reserva."],
+  ["Quais são as condições de cancelamento?", "Até 7 dias antes do evento, podes pedir o reembolso de 50% do valor pago. Consulta a Política de Cancelamento e Reembolso."],
+  ["Como contacto a equipa?", "Contacto oficial FestGo: +244 932 511 161. Após a inscrição, a equipa usa o contacto indicado para acompanhar a reserva."],
 ];
 
 export const dynamic = "force-dynamic";
@@ -112,7 +112,7 @@ export default async function Home() {
 
       <section id="faq" className="experience-faq"><div className="home-shell faq-grid"><div><p className="section-kicker">Perguntas frequentes</p><h2>Antes de embarcares.</h2><p>Informação sobre a viagem, a reserva e o pagamento.</p></div><div className="faq-list">{questions.map(([question,answer]) => <details key={question}><summary>{question}<ChevronDown size={18} /></summary><p>{answer}</p></details>)}</div></div></section>
 
-      <footer className="home-footer"><div className="home-shell footer-inner"><Link href="#inicio"><Logo /></Link><div className="footer-links"><Link href="/termos">Termos</Link><Link href="/privacidade">Privacidade</Link><Link href="/cancelamentos">Cancelamentos</Link></div><span>© 2026 FestGo Angola</span></div></footer>
+      <footer className="home-footer"><div className="home-shell footer-inner"><Link href="#inicio"><Logo /></Link><div className="footer-links"><Link href="/termos">Termos</Link><Link href="/privacidade">Privacidade</Link><Link href="/reembolsos">Reembolsos</Link></div><span>© 2026 FestGo Angola</span></div></footer>
     </main>
   );
 }

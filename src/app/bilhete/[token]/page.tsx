@@ -68,11 +68,11 @@ export default async function TicketPage({
           </div>
           {/* QR codes are generated as data URIs and already have an exact bitmap size. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {privateProbe ? <p className="rounded-xl bg-amber-100 p-4 text-center text-sm font-black text-amber-900">TESTE PRIVADO — não é válido para embarque.</p> : <img
+          {privateProbe ? <p className="rounded-xl bg-amber-100 p-4 text-center text-sm font-black text-amber-900">TESTE PRIVADO — não é válido para embarque.</p> : valid ? <img
             src={qr}
             alt="Código QR do bilhete"
             className="mx-auto aspect-square w-full max-w-72"
-          />}
+          /> : <p className="rounded-xl bg-red-50 p-4 text-center text-sm font-black text-red-700">Bilhete inválido ou revogado.</p>}
           {!privateProbe && <dl className="grid grid-cols-2 gap-4 border-t border-zinc-100 pt-5 text-sm">
             <div>
               <dt className="text-zinc-500">Data</dt>

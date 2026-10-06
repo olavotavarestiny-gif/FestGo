@@ -15,7 +15,8 @@ export function wipayCallbackUrl(baseUrl: string, test = false) {
   if (url.protocol !== "https:" && process.env.NODE_ENV !== "test")
     throw new WiPayError("O callback WiPay requer HTTPS.", undefined, "CALLBACK_URL_INVALID");
   if (url.pathname !== path || url.username || url.password || url.search || url.hash || url.port ||
-      !url.hostname || url.hostname === "localhost" || url.hostname === "127.0.0.1")
+      !url.hostname || url.hostname === "localhost" || url.hostname === "127.0.0.1" ||
+      (!test && url.origin !== new URL(baseUrl).origin))
     throw new WiPayError("A URL de callback WiPay é inválida.", undefined, "CALLBACK_URL_INVALID");
   return url.toString();
 }

@@ -31,6 +31,8 @@ describe("WiPay Angola integration", () => {
     delete process.env.WIPAY_CALLBACK_ORIGIN;
     process.env.WIPAY_CALLBACK_URL = "https://festgo.mazanga.digital/pagamento";
     expect(() => wipayCallbackUrl("https://festgo.mazanga.digital")).toThrow("inválida");
+    process.env.WIPAY_CALLBACK_URL = "https://old-preview.vercel.app/api/webhooks/wipay";
+    expect(() => wipayCallbackUrl("https://festgo.mazanga.digital")).toThrow("inválida");
     delete process.env.WIPAY_CALLBACK_URL;
     expect(() => wipayCallbackUrl("https://festgo.mazanga.digital")).toThrow("não está configurada");
   });

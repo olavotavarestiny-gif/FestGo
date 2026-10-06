@@ -14,6 +14,7 @@ import {
 } from "@/lib/pre-reservations";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { createReservationToken } from "@/lib/reservation-access";
+import { TERMS_VERSION } from "@/lib/terms";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,7 @@ const schema = z
     seats: z.array(z.number().int().min(1).max(100)).min(1).max(100),
     minorGuardianName: z.string().trim().max(120).optional().default(""),
     minorGuardianPhone: z.string().trim().max(24).optional().default(""),
+    terms: z.literal(true),
     pickupPreference: z.enum([
       "CIDADE_PRIMEIRO_MAIO",
       "TALATONA_BELAS",
@@ -256,6 +258,7 @@ export async function POST(
                   ? parsed.data.pickupOther
                   : null,
               holdExpiresAt: invitation.expiresAt,
+              termsAcceptedAt: new Date(),
               passengers: {
                 create: passengerData,
               },
@@ -272,6 +275,7 @@ export async function POST(
             where: { id: invitation.id },
             data: { confirmedAt: new Date() },
           });
+          await tx.auditLog.create({ data: { action: "TERMS_ACCEPTED", entityType: "Reservation", entityId: reservation.id, metadata: { version: TERMS_VERSION, acceptedAt: new Date().toISOString(), invitationId: invitation.id }, ipAddress: clientIp(request) } });
           await tx.auditLog.create({
             data: {
               action: "PAYMENT_INVITATION_DETAILS_CONFIRMED",

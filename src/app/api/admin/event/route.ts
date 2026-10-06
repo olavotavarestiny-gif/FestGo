@@ -9,6 +9,7 @@ import { validateEkwanzaConfiguration } from "@/lib/integrations/ekwanza";
 import { defaultPaymentProvider } from "@/lib/payment-providers";
 import { isOtpRequired, publicBaseUrl } from "@/lib/config";
 import { wipayCallbackUrl } from "@/lib/integrations/wipay";
+import { pickupAvailableForSale } from "@/lib/pickup-availability";
 
 const schema = z.object({ status: z.enum(["ON_SALE", "CLOSED"]) });
 export async function PATCH(request: Request) {
@@ -32,7 +33,7 @@ export async function PATCH(request: Request) {
         { status: 409 },
       );
     const event = await prisma.event.findUnique({ where: { slug: "brunch-mangais" }, include: { routes: { where: { active: true }, include: { pickupPoints: true } } } });
-    if (!event || event.eventDate <= new Date() || !event.routes.some((route) => route.capacity > 0 && route.pickupPoints.some((point) => point.operationalConfirmed && (!point.departureAt || point.departureAt > new Date()))))
+    if (!event || event.eventDate <= new Date() || !event.routes.some((route) => route.capacity > 0 && route.pickupPoints.some((point) => pickupAvailableForSale(point))))
       return NextResponse.json({ error: "Confirma pelo menos um ponto de embarque e a capacidade antes de abrir vendas." }, { status: 409 });
     let provider: string;
     try { provider = defaultPaymentProvider(); }

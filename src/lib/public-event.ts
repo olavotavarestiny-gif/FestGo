@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/db";
 import type { TicketPrices } from "@/lib/pre-reservations";
+import { pickupAvailableForSale } from "@/lib/pickup-availability";
 
 export type PublicEvent = {
   slug: string;
@@ -50,7 +51,7 @@ export const getPublicEvent = cache(async (slug = "brunch-mangais"): Promise<Pub
       ticketIncludesEntry: event.ticketIncludesEntry,
       salesOpen: event.status === "ON_SALE" && event.eventDate > now && (!event.salesOpenAt || event.salesOpenAt <= now) && (!event.salesCloseAt || event.salesCloseAt > now),
       travelDuration: event.travelEstimateConfirmed ? event.estimatedTravelDuration : null,
-      pickups: event.routes.flatMap((route) => route.pickupPoints.filter((point) => !point.departureAt || point.departureAt > now).map((point) => ({
+      pickups: event.routes.flatMap((route) => route.pickupPoints.filter((point) => pickupAvailableForSale({ ...point, operationalConfirmed: true }, now)).map((point) => ({
         id: point.id, name: point.name, address: point.address, routeName: route.name,
         departureAt: point.departureAt?.toISOString() ?? null,
         available: Math.max(0, Math.min(event.capacity - occupied, route.capacity - (held.find((row) => row.routeId === route.id)?._sum.quantity ?? 0))),
