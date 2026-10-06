@@ -27,7 +27,7 @@ let failed = false;
 try {
   await pg.initialise(); await pg.start(); started = true;
   const files = process.argv.slice(2);
-  const tests = files.length ? files : ["src/integration/checkout-safety.test.ts", "src/integration/wipay-flow.test.ts", "src/integration/integrated-gateway-test.test.ts", "src/integration/production-flows.test.ts"];
+  const tests = files.length ? files : ["src/integration/checkout-safety.test.ts", "src/integration/wipay-flow.test.ts", "src/integration/integrated-gateway-test.test.ts", "src/integration/production-flows.test.ts", "src/integration/private-wipay-probe.test.ts"];
   for (let index = 0; index < tests.length; index++) {
     const database = `festgo_test_${index}`; await pg.createDatabase(database);
     const url = `postgresql://festgo_test:${password}@127.0.0.1:${port}/${database}`;

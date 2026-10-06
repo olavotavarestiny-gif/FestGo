@@ -6,6 +6,7 @@ import { checkWiPaySignature, WiPayError } from "@/lib/integrations/wipay";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { finalizeVerifiedPayment, PaymentVerificationError } from "@/lib/payment-finalization";
 import { schedulePostPaymentJobs } from "@/lib/schedule-jobs";
+import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
         { providerReference: payload.reference_id },
       ],
     },
+    include: { reservation: { include: { event: { select: { slug: true } } } } },
 
   });
   if (!payment)
@@ -103,7 +105,7 @@ export async function POST(request: Request) {
       rawStatus: `${payload.status}:${payload.status_reason}`,
       webhook: { providerEventId, type: `wipay.${payload.status}`, payload },
     });
-    if (result.newlyConfirmed) schedulePostPaymentJobs(request);
+    if (result.newlyConfirmed && !isPrivateWiPayProbe(payment.reservation)) schedulePostPaymentJobs(request);
     return NextResponse.json({ received: true, ...result });
   } catch (error) {
     return NextResponse.json(

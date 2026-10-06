@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { PaymentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
 
 /** Only provider adapters which authenticated/queried the provider may call this. */
 export type VerifiedPayment = {
@@ -195,19 +196,23 @@ export async function finalizeVerifiedPayment(input: VerifiedPayment) {
         await tx.reservation.update({ where: { id: reservation.id }, data: { status: "PAID", paidAt: reservation.paidAt ?? now } });
         await tx.seatPreference.updateMany({ where: { reservationId: reservation.id, releasedAt: null }, data: { status: "CONFIRMED" } });
         await tx.ticket.createMany({ data: reservation.passengers.map((passenger) => ({ passengerId: passenger.id })), skipDuplicates: true });
-        await tx.notification.createMany({
-          data: [{ reservationId: reservation.id, channel: "SMS", recipient: reservation.customer.phone, template: "BOOKING_PAID" }],
-          skipDuplicates: true,
-        });
-        await tx.cRMIntegrationJob.upsert({
-          where: { reservationId_kind: { reservationId: reservation.id, kind: "SALE" } },
-          create: { reservationId: reservation.id, kind: "SALE" }, update: {},
-        });
+        if (!isPrivateWiPayProbe(reservation)) {
+          await tx.notification.createMany({
+            data: [{ reservationId: reservation.id, channel: "SMS", recipient: reservation.customer.phone, template: "BOOKING_PAID" }],
+            skipDuplicates: true,
+          });
+          await tx.cRMIntegrationJob.upsert({
+            where: { reservationId_kind: { reservationId: reservation.id, kind: "SALE" } },
+            create: { reservationId: reservation.id, kind: "SALE" }, update: {},
+          });
+        }
         await tx.paymentInvitation.updateMany({ where: { reservationId: reservation.id, confirmedAt: null }, data: { confirmedAt: now } });
         await tx.referralRedemption.updateMany({ where: { reservationId: reservation.id, confirmedAt: null }, data: { confirmedAt: now } });
         if (reservation.discountId) await tx.discount.update({ where: { id: reservation.discountId }, data: { usedCount: { increment: 1 } } });
-        const referralCode = `FG${createHash("sha256").update(reservation.customerId).digest("hex").slice(0, 10).toUpperCase()}`;
-        await tx.referralCode.upsert({ where: { customerId: reservation.customerId }, create: { customerId: reservation.customerId, code: referralCode }, update: {} });
+        if (!isPrivateWiPayProbe(reservation)) {
+          const referralCode = `FG${createHash("sha256").update(reservation.customerId).digest("hex").slice(0, 10).toUpperCase()}`;
+          await tx.referralCode.upsert({ where: { customerId: reservation.customerId }, create: { customerId: reservation.customerId, code: referralCode }, update: {} });
+        }
         await tx.auditLog.create({
           data: { action: "PAYMENT_CONFIRMED", entityType: "Reservation", entityId: reservation.id, metadata: { paymentId: payment.id, provider: payment.provider, amount: input.amount, currency: input.currency } },
         });

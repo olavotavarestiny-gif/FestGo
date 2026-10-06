@@ -23,6 +23,8 @@ Em 30/09/2026, os primeiros testes no domínio público receberam HTTP 401. O do
 
 Em 06/10/2026, com credenciais de produção e autorização do proprietário, uma transacção real de 100 AOA (`PROBE-LIVE-F1CBFC9E`) concluiu o mesmo fluxo isolado: callback HTTP 200 em `/api/webhooks/wipay-test`, pagamento `SUCCEEDED`/`accepted`, reserva `PAID` e bilhete emitido. A rota temporária que iniciou o checkout foi removida depois da verificação. O teste não abriu as vendas ao público; antes disso, confirmar a URL `/api/webhooks/wipay` no portal WiPay e as condições operacionais do evento.
 
+Para validar a rota pública sem abrir as vendas, o administrador pode entrar em `/admin/teste-gateway` e criar uma única reserva técnica de 100 AOA. Ela usa `/checkout/[reservationId]`, `/api/payments/intent`, `/api/webhooks/wipay` e `/pagamento`, como uma compra real. O evento técnico está marcado como `DRAFT`, não oferece transporte e não ocupa lugares do Brunch Mangais. O link de pagamento é recuperável na mesma página administrativa. Não são criados SMS nem tarefas CRM para essa reserva. A reserva expira ao fim de 60 minutos; só se cria uma no total. O teste deve ser concluído pelo proprietário no checkout da WiPay.
+
 ## Configuração do projecto
 
 ```dotenv

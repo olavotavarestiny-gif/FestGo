@@ -10,6 +10,7 @@ import { createEkwanzaCharge, EkwanzaError } from "@/lib/integrations/ekwanza";
 import { availablePaymentProviders, defaultPaymentProvider, publicPaymentDetails } from "@/lib/payment-providers";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { publicBaseUrl } from "@/lib/config";
+import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -26,15 +27,25 @@ class IntentError extends Error {
 }
 
 export async function POST(request: Request) {
-  if (!arePaymentsEnabled()) return NextResponse.json({ error: "Os pagamentos estão temporariamente indisponíveis." }, { status: 409 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
+  if (!arePaymentsEnabled() && !parsed.success)
+    return NextResponse.json({ error: "Os pagamentos estão temporariamente indisponíveis." }, { status: 409 });
   if (!parsed.success) return NextResponse.json({ error: "Pedido de pagamento inválido." }, { status: 400 });
   if (!verifyReservationToken(parsed.data.reservationId, parsed.data.accessToken))
     return NextResponse.json({ error: "Reserva não autorizada." }, { status: 403 });
   try {
     await enforceRateLimit({ namespace: "payment-intent", identifier: clientIp(request), limit: 15, windowMs: 10 * 60_000 });
-    const provider = parsed.data.provider ?? defaultPaymentProvider();
-    if (!availablePaymentProviders().includes(provider)) throw new IntentError("Este método de pagamento não está disponível.", 400);
+    const identity = await prisma.reservation.findUnique({ where: { id: parsed.data.reservationId }, select: {
+      eventId: true, reference: true, totalAmount: true, event: { select: { slug: true } },
+    } });
+    if (!identity) throw new IntentError("Reserva não encontrada.", 404);
+    const privateProbe = isPrivateWiPayProbe(identity);
+    if (!arePaymentsEnabled() && !privateProbe)
+      throw new IntentError("Os pagamentos estão temporariamente indisponíveis.", 409);
+    const provider = privateProbe ? "wipay" : parsed.data.provider ?? defaultPaymentProvider();
+    if (privateProbe && parsed.data.provider && parsed.data.provider !== "wipay")
+      throw new IntentError("Este teste usa apenas a WiPay.", 400);
+    if (!privateProbe && !availablePaymentProviders().includes(provider)) throw new IntentError("Este método de pagamento não está disponível.", 400);
     let wipaySettings: { appUrl: URL; callbackUrl: string } | undefined;
     if (provider === "wipay") {
       try {
@@ -48,8 +59,6 @@ export async function POST(request: Request) {
       }
     }
     const method = provider === "wipay" ? "hosted" : provider === "ekwanza" ? "gpo" : parsed.data.method;
-    const identity = await prisma.reservation.findUnique({ where: { id: parsed.data.reservationId }, select: { eventId: true } });
-    if (!identity) throw new IntentError("Reserva não encontrada.", 404);
     // Claim exactly one local attempt before any request capable of charging.
     // A timeout keeps that claim UNKNOWN and cannot trigger a duplicate charge.
     const claim = await prisma.$transaction(async (tx) => {
@@ -58,6 +67,7 @@ export async function POST(request: Request) {
         where: { id: parsed.data.reservationId },
         include: { customer: true, event: true, payments: { where: { status: { in: [...livePaymentStatuses] } }, orderBy: { createdAt: "desc" } } },
       });
+      if (privateProbe !== isPrivateWiPayProbe(reservation)) throw new IntentError("Reserva inválida.", 409);
       if (!payableStates.some((status) => status === reservation.status)) throw new IntentError("Esta reserva já não pode receber um pagamento.", 409);
       if (["CANCELLED", "CLOSED"].includes(reservation.event.status) || reservation.event.eventDate <= new Date())
         throw new IntentError("Este evento já não aceita pagamentos.", 409);
