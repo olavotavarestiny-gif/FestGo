@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   if (!process.env.DATABASE_URL) return NextResponse.json({ error: "O serviço de reservas está indisponível." }, { status: 503 });
   try {
     // Even replay requests are rate limited. The UUID is a recovery capability, never a sequential ID.
-    await enforceRateLimit({ namespace: "reservation-ip", identifier: clientIp(request), limit: 30, windowMs: 60 * 60_000 });
+    await enforceRateLimit({ namespace: "reservation-ip-phone", identifier: `${clientIp(request)}:${phone}`, limit: 30, windowMs: 60 * 60_000 });
     const result = await retrySerializable(() => prisma.$transaction(async (tx) => {
       const existing = await tx.reservation.findUnique({ where: { idempotencyKey: input.idempotencyKey }, include: { customer: true, passengers: true, event: true, pickupPoint: true, seatPreferences: { where: { releasedAt: null } } } });
       if (existing) {
@@ -97,9 +97,11 @@ export async function POST(request: Request) {
         where: { id: input.verificationId, phone, verifiedAt: { not: null }, usedAt: null, expiresAt: { gt: now } },
       }) : null;
       if (isOtpRequired() && !challenge) throw new BookingError("Confirma novamente o teu número de telefone.", 401);
-      // Bound seat-hold abuse per contact as well as per IP, inside the reservation transaction.
-      const recent = await tx.reservation.count({ where: { customer: { phone }, createdAt: { gt: new Date(now.getTime() - 24 * 60 * 60_000) } } });
-      if (recent >= 4) throw new BookingError("Limite de reservas atingido. Tenta novamente mais tarde.", 429);
+      // Expired, rejected and cancelled attempts must not block a customer from booking again.
+      const activeHolds = await tx.reservation.count({ where: {
+        customer: { phone }, status: { in: ["HELD", "AWAITING_PAYMENT", "PAYMENT_PENDING"] }, holdExpiresAt: { gt: now },
+      } });
+      if (activeHolds >= 4) throw new BookingError("Já tens várias reservas por concluir. Finaliza uma ou aguarda que expirem.", 429);
 
       const customer = await tx.customer.upsert({ where: { phone }, update: {
         fullName: input.name, email: input.email || null, marketingConsent: input.marketing, consentUpdatedAt: now,
@@ -158,7 +160,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof BookingError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (typeof error === "object" && error && "status" in error && error.status === 429)
-      return NextResponse.json({ error: "Limite de reservas atingido. Tenta novamente mais tarde." }, { status: 429 });
+      return NextResponse.json({ error: "Muitos pedidos de reserva. Tenta novamente mais tarde." }, { status: 429 });
     return NextResponse.json({ error: "Não foi possível guardar a reserva. Tenta novamente." }, { status: 503 });
   }
 }
