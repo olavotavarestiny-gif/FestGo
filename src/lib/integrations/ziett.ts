@@ -90,7 +90,7 @@ export async function sendOtpSms({
   code: string;
   idempotencyKey: string;
   expiresInMinutes?: number;
-}): Promise<{ messageId: string }> {
+}): Promise<{ messageId: string; providerStatus: string }> {
   if (!/^\d{6}$/.test(code))
     throw new ZiettError("O código OTP deve ter seis dígitos.");
   return sendSms({

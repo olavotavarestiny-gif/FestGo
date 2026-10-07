@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import { analyzeSms, smsTemplates } from "./sms";
 
 describe("SMS cost estimation", () => {
-  it("keeps OTP messages in one GSM-7 segment", () => {
+  it("preserves the requested Portuguese OTP and measures its UCS-2 cost", () => {
     for (const content of [
       smsTemplates.otp("123456"),
       smsTemplates.otp("123456", 10),
     ]) {
       const result = analyzeSms(content);
-      expect(result.encoding).toBe("GSM-7");
-      expect(result.segments).toBe(1);
+      expect(content).toContain("O teu código de confirmação é 123456");
+      expect(result.encoding).toBe("UCS-2");
+      expect(result.segments).toBe(2);
       expect(result.characterCount).toBeLessThanOrEqual(160);
     }
   });

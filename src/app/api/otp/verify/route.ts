@@ -39,6 +39,7 @@ export async function POST(request: Request) {
     if (
       !challenge ||
       challenge.phone !== phone ||
+      challenge.sendStatus !== "SENT" ||
       challenge.verifiedAt ||
       challenge.expiresAt <= new Date()
     ) {
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
     const claimed = await prisma.sMSVerification.updateMany({
       where: {
         id: challenge.id,
+        sendStatus: "SENT",
         verifiedAt: null,
         usedAt: null,
         expiresAt: { gt: new Date() },

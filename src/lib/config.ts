@@ -8,7 +8,17 @@ function minutes(name: string, fallback: number, maximum = 1440) {
 
 export const reservationHoldMinutes = () => minutes("RESERVATION_HOLD_MINUTES", 30, 120);
 export const abandonedCheckoutFollowupMinutes = () => minutes("ABANDONED_CHECKOUT_FOLLOWUP_MINUTES", 10);
-export const otpExpirationMinutes = () => minutes("OTP_EXPIRATION_MINUTES", 5, 15);
+export function checkoutRecoverySchedule() {
+  const first = abandonedCheckoutFollowupMinutes();
+  const second = minutes("ABANDONED_CHECKOUT_SECOND_FOLLOWUP_MINUTES", 20);
+  if (second <= first) throw new Error("Second checkout follow-up must be later than the first.");
+  return { first, second, minimumGap: second - first };
+}
+export function otpExpirationMinutes() {
+  const value = minutes("OTP_EXPIRATION_MINUTES", 5, 5);
+  if (value !== 5) throw new Error("OTP_EXPIRATION_MINUTES must be 5.");
+  return value;
+}
 export const maxOtpAttempts = () => minutes("MAX_OTP_ATTEMPTS", 5, 10);
 export const isOtpRequired = () => process.env.CHECKOUT_REQUIRE_OTP !== "false";
 

@@ -53,6 +53,6 @@ Os testes de integração PostgreSQL são activados com `TEST_DATABASE_URL`. Nun
 - Tarefas activas: `/api/jobs/reconcile-payments`, `/api/jobs/notifications`
 - KukuGest: código histórico preservado em `/api/jobs/crm`, desactivado salvo quando `KUKUGEST_ENABLED=true`
 
-As tarefas são protegidas por `CRON_SECRET`. Na Vercel, os agendamentos estão definidos em `vercel.json`.
+As tarefas são protegidas por `CRON_SECRET`. Na Vercel, os agendamentos diários estão definidos em `vercel.json`. A recuperação de pagamento exige também chamar `/api/jobs/notifications` a cada 5 minutos, por scheduler externo no Hobby ou cron frequente no Pro. Consultar [operação de SMS](docs/sms-runbook.md).
 
 Consultar [operação das pré-reservas](docs/pre-reservation-runbook.md), [produção e recuperação](docs/production-runbook.md) e [checklist de lançamento](docs/launch-checklist.md) antes de publicar.

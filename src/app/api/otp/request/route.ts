@@ -49,7 +49,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const now = new Date();
   try {
     await Promise.all([
       enforceRateLimit({
@@ -65,50 +64,50 @@ export async function POST(request: Request) {
         windowMs: 60 * 60_000,
       }),
     ]);
-    const recent = await prisma.sMSVerification.findFirst({
-      where: { phone, lastSentAt: { gt: new Date(now.getTime() - 30_000) } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
+    const challenge = await prisma.$transaction(async (tx) => {
+      // Serializes initial requests and resends even across different server instances.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${phone}))`;
+      const claimedAt = new Date();
+      const recent = await tx.sMSVerification.findFirst({
+        where: { phone, lastSentAt: { gt: new Date(claimedAt.getTime() - 30_000) } },
+        select: { id: true },
+      });
+      if (recent) return null;
+      await tx.sMSVerification.updateMany({
+        where: { phone, usedAt: null, expiresAt: { gt: claimedAt } },
+        data: { expiresAt: claimedAt },
+      });
+      const created = await tx.sMSVerification.create({
+        data: { phone, codeHash: "pending", expiresAt: new Date(claimedAt.getTime() + otpExpirationMinutes() * 60_000),
+          maxAttempts: maxOtpAttempts(), lastSentAt: claimedAt, sendStatus: "PROCESSING" },
+      });
+      const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      await tx.sMSVerification.update({ where: { id: created.id }, data: { codeHash: hashCode(created.id, phone, code) } });
+      return { ...created, code };
     });
-    if (recent)
-      return NextResponse.json(
-        { error: "Espera 30 segundos antes de pedir outro código." },
-        { status: 429 },
-      );
-
-    await prisma.sMSVerification.updateMany({
-      where: { phone, verifiedAt: null, expiresAt: { gt: now } },
-      data: { expiresAt: now },
-    });
-
-    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-    const challenge = await prisma.sMSVerification.create({
-      data: {
-        phone,
-        codeHash: "pending",
-        expiresAt: new Date(now.getTime() + otpExpirationMinutes() * 60_000),
-        maxAttempts: maxOtpAttempts(),
-        lastSentAt: now,
-      },
-    });
-    const codeHash = hashCode(challenge.id, phone, code);
-    await prisma.sMSVerification.update({
-      where: { id: challenge.id },
-      data: { codeHash },
-    });
+    if (!challenge)
+      return NextResponse.json({ error: "Espera 30 segundos antes de pedir outro código." }, { status: 429 });
 
     try {
       const sent = await sendOtpSms({
         phone,
-        code,
+        code: challenge.code,
         idempotencyKey: `festgo-otp-${challenge.id}`,
       });
+      await prisma.sMSVerification.update({ where: { id: challenge.id }, data: {
+        sendStatus: "SENT", sentAt: new Date(), providerMessageId: sent.messageId, providerStatus: sent.providerStatus, lastError: null,
+      } });
       return NextResponse.json({
         challengeId: challenge.id,
         expiresAt: challenge.expiresAt,
         messageId: sent.messageId,
       });
     } catch (error) {
+      await prisma.sMSVerification.update({ where: { id: challenge.id }, data: {
+        sendStatus: error instanceof ZiettError && error.status && error.status < 500 ? "FAILED" : "UNKNOWN",
+        providerStatus: error instanceof ZiettError && error.status ? `HTTP_${error.status}` : "UNKNOWN",
+        lastError: "O fornecedor não confirmou o envio do OTP.", expiresAt: new Date(),
+      } });
       if (error instanceof ZiettError) {
         return NextResponse.json(
           { error: error.message, traceId: error.traceId },

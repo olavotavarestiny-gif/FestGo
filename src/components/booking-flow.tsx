@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import { event, formatKz } from "@/lib/data";
 import type { PublicEvent } from "@/lib/public-event";
 import { checkoutUrl, forgetCheckout, readCheckout, rememberCheckout, type CheckoutAccess } from "@/lib/checkout-session";
+import { trackMeta } from "@/lib/meta-browser";
 import { trackClarityEvent } from "@/lib/clarity";
 import { buildWhatsAppReservationUrl } from "@/lib/whatsapp";
 import {
@@ -342,7 +343,7 @@ export function PreReservationFlow() {
                 <Summary label="Total" value={formatKz(pricing.total)} />
                 {pricing.discount > 0 && <Summary label="Poupança" value={formatKz(pricing.discount)} />}
               </div>
-              <Navigation back={() => router.push("/")} next={() => setStep(2)} nextDisabled={quantity > availableCount} />
+              <Navigation back={() => router.push("/")} next={() => { trackMeta("InitiateCheckout", {}, "checkout:" + crypto.randomUUID()); setStep(2); }} nextDisabled={quantity > availableCount} />
             </div>
           )}
 
@@ -556,6 +557,7 @@ export function BookingFlow({ bookingEvent, requiresOtp }: { bookingEvent: Publi
   function selectPickupAndContinue() {
     if (!pickupTracked.current) {
       pickupTracked.current = true;
+      trackMeta("InitiateCheckout");
       trackClarityEvent("pickup_selected");
     }
     nextStep(2);

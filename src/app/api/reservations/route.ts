@@ -143,6 +143,7 @@ export async function POST(request: Request) {
         quantity: input.passengers.length, plan: legacyPlanForQuantity(input.passengers.length), unitPrice: event.individualPrice,
         discountAmount: pricing.discount + promoDiscount, totalAmount, pricingBreakdown: pricing,
         currency: event.currency, holdExpiresAt, termsAcceptedAt: now, idempotencyKey: input.idempotencyKey,
+        phoneVerifiedAt: challenge?.verifiedAt ?? null, verifiedPhone: challenge ? phone : null,
         passengers: { create: input.passengers.map((fullName) => ({ fullName })) },
         seatPreferences: { create: seats.map((seatNumber) => ({ eventId: event.id, seatNumber, status: "TEMPORARILY_HELD" })) },
       } });

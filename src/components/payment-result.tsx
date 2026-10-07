@@ -5,10 +5,12 @@ import Link from "next/link";
 import { Check, Clock3, ExternalLink, RefreshCw, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { checkoutUrl, readCheckout, rememberCheckout, type CheckoutAccess } from "@/lib/checkout-session";
+import { trackMeta } from "@/lib/meta-browser";
 import { trackClarityEvent } from "@/lib/clarity";
 import { formatKz } from "@/lib/data";
 
 type PaymentState = {
+  metaPurchase?: { eventId: string; value: number; currency: string };
   status: string;
   reservationStatus?: string;
   reservationReference?: string;
@@ -77,6 +79,11 @@ export function PaymentResult({ reservationId, accessToken, cancelled, onRetry }
     failedTracked.current = true;
     trackClarityEvent("payment_failed");
   }, [state.status]);
+
+  useEffect(() => {
+    if (paid && state.status === "SUCCEEDED" && state.metaPurchase)
+      trackMeta("Purchase", { value: state.metaPurchase.value, currency: state.metaPurchase.currency }, state.metaPurchase.eventId);
+  }, [paid, state.status, state.metaPurchase]);
 
   const paymentUrl = state.details?.paymentUrl;
   const groupUrl = state.whatsappGroupUrl;

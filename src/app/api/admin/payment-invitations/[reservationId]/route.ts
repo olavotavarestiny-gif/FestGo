@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { staffFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { sendSms, ZiettError } from "@/lib/integrations/ziett";
+import { dispatchNotification } from "@/lib/notification-jobs";
 import { canRecoverCheckout, invitationState, paymentInvitationLink, paymentInvitationTtlHours } from "@/lib/payment-invitations";
 import { clientIp, enforceRateLimit } from "@/lib/rate-limit";
 import { analyzeSms, smsTemplates } from "@/lib/sms";
@@ -44,7 +44,7 @@ export async function POST(request: Request, context: { params: Promise<{ reserv
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const prepared = await prisma.$transaction(async (tx) => {
       // Serialize with gateway finalization: inspect current state immediately
       // before sending, never the state fetched before a concurrent payment.
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${seed.eventId} FOR UPDATE`;
@@ -69,7 +69,8 @@ export async function POST(request: Request, context: { params: Promise<{ reserv
           const content = smsTemplates.paymentInvitation(paymentInvitationLink(invitation), reservation.reference);
           const analysis = analyzeSms(content);
           const data = { recipient: reservation.customer.phone, status: "DRAFT", content, encoding: analysis.encoding, characterCount: analysis.characterCount, segmentCount: analysis.segments, requestedById: user.id, attempts: 0, lastError: null, sentAt: null, providerMessageId: null, providerStatus: null };
-          await tx.notification.upsert({ where: { reservationId_channel_template: { reservationId, channel: "SMS", template: "PAYMENT_LINK" } }, create: { reservationId, channel: "SMS", template: "PAYMENT_LINK", ...data }, update: data });
+          await tx.notification.createMany({ data: [{ reservationId, channel: "SMS", template: "PAYMENT_LINK", ...data }], skipDuplicates: true });
+          await tx.notification.updateMany({ where: { reservationId, channel: "SMS", template: "PAYMENT_LINK", dispatchStartedAt: null, attempts: 0 }, data });
         }
         if (!invitation) throw new Error("Invitation unavailable");
         await audit(active ? "PAYMENT_INVITATION_REUSED" : "PAYMENT_INVITATION_CREATED", invitation.id, { result: "READY", expiresAt: invitation.expiresAt.toISOString() });
@@ -94,25 +95,15 @@ export async function POST(request: Request, context: { params: Promise<{ reserv
         return NextResponse.json({ error: `Este texto usa ${analysis.segments} segmentos ${analysis.encoding}. Confirma o custo antes de enviar.`, requiresAcknowledgement: true }, { status: 409 });
       const notification = await tx.notification.findUnique({ where: { reservationId_channel_template: { reservationId, channel: "SMS", template: "PAYMENT_LINK" } } });
       if (!notification) return NextResponse.json({ error: "Gera primeiro o link de pagamento." }, { status: 409 });
-      if (notification.status === "SENT" || notification.attempts >= 3)
+      if (notification.dispatchStartedAt || notification.status === "SENT" || notification.attempts > 0)
         return NextResponse.json({ error: "O link já foi enviado ou atingiu o limite de tentativas." }, { status: 409 });
-      const claimed = await tx.notification.updateMany({
-        where: { id: notification.id, attempts: { lt: 3 }, OR: [{ status: { in: ["DRAFT", "FAILED", "RETRY"] } }, { status: "PROCESSING", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }] },
-        data: { status: "PROCESSING", provider: "ziett", content, encoding: analysis.encoding, characterCount: analysis.characterCount, segmentCount: analysis.segments, requestedById: user.id, attempts: { increment: 1 }, lastError: null },
-      });
-      if (!claimed.count) return NextResponse.json({ error: "Já existe um envio em processamento." }, { status: 409 });
-      try {
-        const result = await sendSms({ phone: reservation.customer.phone, content, idempotencyKey: `notification-${notification.id}-${invitation.nonce}` });
-        await tx.notification.update({ where: { id: notification.id }, data: { status: "SENT", providerMessageId: result.messageId, providerStatus: result.providerStatus, sentAt: new Date(), lastError: null } });
-        await audit("PAYMENT_INVITATION_SMS_SENT", invitation.id, { result: "SENT", provider: "ziett", providerMessageId: result.messageId, notificationId: notification.id, attempt: notification.attempts + 1, segments: analysis.segments });
-        return NextResponse.json({ ok: true, status: "SENT", providerStatus: result.providerStatus, characters: analysis.characterCount, segments: analysis.segments });
-      } catch (error) {
-        const providerStatus = error instanceof ZiettError && error.status ? `HTTP_${error.status}` : "ERROR";
-        await tx.notification.update({ where: { id: notification.id }, data: { status: "FAILED", providerStatus, lastError: "Não foi possível confirmar o envio pela Ziett." } });
-        await audit("PAYMENT_INVITATION_SMS_FAILED", invitation.id, { result: "FAILED", provider: "ziett", providerStatus, notificationId: notification.id, attempt: notification.attempts + 1 });
-        return NextResponse.json({ error: "A Ziett não confirmou o envio. Podes tentar novamente." }, { status: 502 });
-      }
+      return { notificationId: notification.id, content, invitationNonce: invitation.nonce, requestedById: user.id };
     }, { timeout: 15_000 });
+    if (prepared instanceof Response) return prepared;
+    const sent = await dispatchNotification(prepared.notificationId, prepared);
+    const notification = await prisma.notification.findUniqueOrThrow({ where: { id: prepared.notificationId } });
+    if (!sent) return NextResponse.json({ error: notification.lastError ?? "O envio já foi processado ou está em processamento.", status: notification.status }, { status: notification.status === "UNKNOWN" || notification.status === "FAILED" ? 502 : 409 });
+    return NextResponse.json({ ok: true, status: notification.status, providerStatus: notification.providerStatus, characters: notification.characterCount, segments: notification.segmentCount });
   } catch {
     return NextResponse.json({ error: "Não foi possível concluir a acção. O pagamento não foi alterado." }, { status: 503 });
   }

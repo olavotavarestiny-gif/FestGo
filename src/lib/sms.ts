@@ -45,9 +45,13 @@ export function analyzeSms(content: string): SmsAnalysis {
   };
 }
 
+function firstName(name: string) {
+  return name.trim().split(/\s+/)[0].replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, 40) || "Cliente";
+}
+
 export const smsTemplates = {
   otp(code: string, expiresInMinutes = 5) {
-    return `FestGo: Codigo de verificacao ${code}. Valido por ${expiresInMinutes} minutos. Nao partilhes este codigo.`;
+    return `FestGo: O teu código de confirmação é ${code}. Válido por ${expiresInMinutes} minutos. Não partilhes este código.`;
   },
   paymentLink(link: string) {
     return `FestGo: Paga a tua reserva aqui: ${link}`;
@@ -55,11 +59,16 @@ export const smsTemplates = {
   paymentInvitation(link: string, reference: string) {
     return `FestGo: Reserva ${reference}. Conclui o pagamento no site: ${link}`;
   },
-  abandonedCheckout(link: string, reference: string) {
-    return `FestGo: A reserva ${reference} aguarda pagamento. Continua enquanto os lugares estao reservados: ${link}`;
+  abandonedCheckout(link: string, name: string) {
+    return `Olá, ${firstName(name)}. A tua reserva FestGo ficou por concluir. Finaliza o pagamento para garantires o teu lugar: ${link}`;
   },
-  paymentConfirmed(link: string, reference?: string) {
-    return `FestGo: Pagamento confirmado${reference ? `! Reserva ${reference}` : ""}. Bilhetes: ${link}. Horarios e instrucoes finais por SMS e WhatsApp cerca de 1 semana antes do evento.`;
+  abandonedCheckoutSecond(link: string, name: string) {
+    return `${firstName(name)}, a tua reserva FestGo ainda está pendente. Podes concluir o pagamento aqui: ${link}. Se já não quiseres reservar, ignora esta mensagem.`;
+  },
+  paymentConfirmed(link: string) {
+    const content = `Pagamento confirmado 🎉 A tua viagem com a FestGo está reservada. Consulta e baixa o teu bilhete: ${link}`;
+    const withSchedule = `${content} Os horários finais serão enviados antes do evento.`;
+    return analyzeSms(withSchedule).segments <= analyzeSms(content).segments ? withSchedule : content;
   },
   pickupDetails(pickup: string, address: string, date: string, time: string) {
     const clean = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").slice(0, 100);

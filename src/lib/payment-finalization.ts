@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { META_SITE, metaCustomer, metaJson, purchaseEventId, flushMetaPurchases } from "@/lib/meta-server";
 import { createHash } from "node:crypto";
 import { PaymentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -60,7 +62,7 @@ export async function finalizeVerifiedPayment(input: VerifiedPayment) {
   if (!identity) throw new PaymentVerificationError();
   // Read committed + the shared Event lock serializes capacity changes. Re-read
   // all financial state after obtaining it, never act on pre-lock snapshots.
-  return prisma.$transaction(async (tx) => {
+  const finalized = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${identity.reservation.eventId} FOR UPDATE`;
     const payment = await tx.payment.findUniqueOrThrow({
       where: { id: input.localPaymentId },
@@ -125,6 +127,12 @@ export async function finalizeVerifiedPayment(input: VerifiedPayment) {
     });
     if (!acceptedTransition) result.rawStatus = payment.rawStatus ?? payment.status;
 
+    if (["SUCCEEDED", "REFUND_PENDING", "REFUNDED", "FAILED", "CANCELLED", "UNKNOWN"].includes(result.status)) {
+      await tx.notification.updateMany({
+        where: { reservationId: reservation.id, channel: "SMS", template: { in: ["ABANDONED_CHECKOUT", "ABANDONED_CHECKOUT_2", "PAYMENT_LINK"] }, status: { in: ["PENDING", "RETRY", "PROCESSING", "DRAFT", "BLOCKED"] } },
+        data: { status: "CANCELLED", lastError: "Recuperação interrompida pelo estado verificado do pagamento." },
+      });
+    }
     if (result.status === "REFUNDED") {
       await tx.reservation.update({ where: { id: reservation.id }, data: { status: "REFUNDED" } });
       await tx.ticket.updateMany({
@@ -216,6 +224,12 @@ export async function finalizeVerifiedPayment(input: VerifiedPayment) {
         await tx.auditLog.create({
           data: { action: "PAYMENT_CONFIRMED", entityType: "Reservation", entityId: reservation.id, metadata: { paymentId: payment.id, provider: payment.provider, amount: input.amount, currency: input.currency } },
         });
+        const metaContext = await tx.auditLog.findFirst({ where: { action: "META_MATCH_CONTEXT", entityType: "Reservation", entityId: reservation.id }, orderBy: { createdAt: "desc" } });
+        if (!isPrivateWiPayProbe(reservation)) await tx.auditLog.create({ data: {
+          action: "META_PURCHASE_PENDING", entityType: "Reservation", entityId: reservation.id,
+          metadata: metaJson({ event_name: "Purchase", event_id: purchaseEventId(reservation.id), event_time: Math.floor(now.getTime()/1000), action_source: "website", event_source_url: META_SITE,
+            user_data: { ...(metaContext?.metadata as Record<string, unknown> ?? {}), ...metaCustomer(reservation.customer) }, custom_data: { value: input.amount, currency: "AOA", order_id: reservation.id } }),
+        } });
         result.newlyConfirmed = true;
         result.ticketsIssued = true;
       }
@@ -235,4 +249,8 @@ export async function finalizeVerifiedPayment(input: VerifiedPayment) {
     if (webhookId) await tx.paymentWebhookEvent.update({ where: { id: webhookId }, data: { processedAt: now } });
     return result;
   }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
+  if (finalized.newlyConfirmed) {
+    try { after(flushMetaPurchases); } catch { /* Cron drains the durable outbox outside request scope. */ }
+  }
+  return finalized;
 }

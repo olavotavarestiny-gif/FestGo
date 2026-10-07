@@ -8,7 +8,7 @@
 4. Executar `npm run db:seed`; o evento permanecerá em `DRAFT`.
 5. Criar pelo menos um administrador e dois operadores com `npm run user:create`.
 6. Manter o webhook de pagamentos desactivado nesta fase. Antes das vendas, configurá-lo para `https://festgo.mazanga.digital/api/webhooks/payments` e, quando suportado, enviar `X-Webhook-Secret` ou `X-Signature`.
-7. Confirmar os Cron Jobs da Vercel e a presença de `CRON_SECRET`. O plano Hobby aceita apenas execução diária; para produção, usar Vercel Pro ou um scheduler externo com frequência de 10 minutos.
+7. Confirmar os Cron Jobs da Vercel e a presença de `CRON_SECRET`. O plano Hobby aceita apenas execução diária; para produção, usar Vercel Pro ou um scheduler externo com frequência máxima de 5 minutos para `/api/jobs/notifications`, conforme [operação de SMS](sms-runbook.md).
 
 ## Backups
 
@@ -21,7 +21,7 @@
 ## Incidentes
 
 - Pagamentos incertos: manter os lugares e executar a reconciliação; nunca marcar como pago manualmente sem confirmação do fornecedor.
-- SMS em falha: a compra continua válida; consultar `Notification` e repetir pela fila.
+- SMS em falha: a compra continua válida; consultar `Notification` e o identificador na Ziett. Envios com tentativa registada não são repetidos automaticamente; `UNKNOWN` exige confirmação no fornecedor antes de qualquer intervenção. Não limpar `dispatchStartedAt` nem repor `attempts`.
 - KukuGest indisponível: a compra e o bilhete continuam válidos; consultar `CRMIntegrationJob`.
 - Chave exposta: revogar no fornecedor, substituir na Vercel e redeployar. Não reutilizar a chave anterior.
 - Pré-reservas de emergência: definir `PRE_RESERVATIONS_ENABLED=false` e redeployar.

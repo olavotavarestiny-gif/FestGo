@@ -1,3 +1,5 @@
+import { purchaseEventId } from "@/lib/meta-server";
+import { isPrivateWiPayProbe } from "@/lib/private-wipay-probe";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
       reservationReference: reservation.reference,
       reference: reservation.reference,
       ticketUrl,
+      metaPurchase: paid && !isPrivateWiPayProbe(reservation) ? { eventId: purchaseEventId(reservation.id), value: Number(payment.amount), currency: "AOA" } : undefined,
       whatsappGroupUrl: paid && group && validWhatsappGroupUrl(group) ? group : undefined,
       eventName: reservation.event.name,
       eventDate: reservation.event.eventDate,

@@ -216,6 +216,8 @@ model Reservation {
   currency             String                  @default("AOA")
   holdExpiresAt        DateTime?
   paidAt               DateTime?
+  phoneVerifiedAt      DateTime?
+  verifiedPhone        String?
   idempotencyKey       String                  @unique
   termsAcceptedAt      DateTime?
   campaignSource       String?
@@ -453,16 +455,21 @@ model Discount {
 }
 
 model SMSVerification {
-  id          String    @id @default(cuid())
-  phone       String
-  codeHash    String
-  expiresAt   DateTime
-  attempts    Int       @default(0)
-  maxAttempts Int       @default(5)
-  lastSentAt  DateTime
-  verifiedAt  DateTime?
-  usedAt      DateTime?
-  createdAt   DateTime  @default(now())
+  id                String    @id @default(cuid())
+  phone             String
+  codeHash          String
+  expiresAt         DateTime
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(5)
+  lastSentAt        DateTime
+  sendStatus        String    @default("PENDING")
+  sentAt            DateTime?
+  providerMessageId String?
+  providerStatus    String?
+  lastError         String?
+  verifiedAt        DateTime?
+  usedAt            DateTime?
+  createdAt         DateTime  @default(now())
 
   @@index([phone, expiresAt])
 }
@@ -487,6 +494,7 @@ model Notification {
   requestedById     String?
   requestedBy       User?               @relation("NotificationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   sentAt            DateTime?
+  dispatchStartedAt DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 

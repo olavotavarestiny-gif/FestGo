@@ -6,6 +6,7 @@ import { ArrowRight, LockKeyhole } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { PaymentResult } from "@/components/payment-result";
 import { rememberCheckout, type CheckoutAccess } from "@/lib/checkout-session";
+import { trackMeta } from "@/lib/meta-browser";
 import { trackClarityEvent } from "@/lib/clarity";
 import { formatKz } from "@/lib/data";
 
@@ -35,6 +36,10 @@ export function PaymentCheckout({ access, reference, eventName, quantity, total,
   const inFlight = useRef(false);
   const paymentStartedTracked = useRef(false);
   useEffect(() => { rememberCheckout(access); }, [access]);
+  useEffect(() => {
+    if (paymentsEnabled && !hasPayment && ["HELD", "PAYMENT_PENDING"].includes(status))
+      trackMeta("AddPaymentInfo", { value: total, currency: "AOA" }, `payment-info:${access.reservationId}`, access);
+  }, [access, paymentsEnabled, hasPayment, status, total]);
   useEffect(() => {
     if (!holdExpiresAt) return;
     const update = () => setExpired(new Date(holdExpiresAt).getTime() <= Date.now());
